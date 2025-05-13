@@ -1,5 +1,5 @@
 A2D_INCLUDE=-I${HOME}/git/a2d/include
-CFLAGS=-std=c++17
+CFLAGS=-std=c++17 -g
 # include ../Makefile.in
 
 INCLUDE_DIRS = ../include
