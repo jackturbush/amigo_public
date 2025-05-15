@@ -27,12 +27,14 @@ class CartPoleProblem {
 
   using Vec = std::shared_ptr<Vector<T>>;
 
-  CartPoleProblem(int N = 201, T g = 9.81, T L = 0.5, T m1 = 1.0, T m2 = 0.5)
+  CartPoleProblem(int N = 201, T tf = 2.0, T g = 9.81, T L = 0.5, T m1 = 1.0,
+                  T m2 = 0.5)
       : N(N),
         cart(g, L, m1, m2),
         cart_indices(N),
         cart_layout(cart_indices),
         cart_collect(cart, cart_layout),
+        trap(tf / (N - 1)),
         trap_indices(num_states * (N - 1)),
         trap_layout(trap_indices),
         trap_collect(trap, trap_layout),
@@ -47,27 +49,22 @@ class CartPoleProblem {
       cart_array[i] = ndof;
     }
 
-    time_dof = ndof;
-    ndof++;
-
     int* trap_array = trap_indices.get_host_array();
 
     // Set up the variables for the trapezoid rule
     for (int i = 0; i < N - 1; i++) {
       for (int j = 0; j < num_states; j++, trap_array += TrapComponent::ncomp) {
-        trap_array[0] = time_dof;
-
         // The state variables
-        trap_array[1] = cart_array[i * CartComponent::ncomp + j];
-        trap_array[2] = cart_array[(i + 1) * CartComponent::ncomp + j];
+        trap_array[0] = cart_array[i * CartComponent::ncomp + j];
+        trap_array[1] = cart_array[(i + 1) * CartComponent::ncomp + j];
 
         // The rate variables
-        trap_array[3] = cart_array[i * CartComponent::ncomp + num_states + j];
-        trap_array[4] =
+        trap_array[2] = cart_array[i * CartComponent::ncomp + num_states + j];
+        trap_array[3] =
             cart_array[(i + 1) * CartComponent::ncomp + num_states + j];
 
         // The multiplier
-        trap_array[5] = ndof;
+        trap_array[4] = ndof;
         ndof++;
       }
     }
@@ -100,6 +97,7 @@ class CartPoleProblem {
     }
   }
 
+  int get_num_dof() const { return ndof; }
   Vec create_vector() const { return std::make_shared<Vector<T>>(ndof); }
 
   T lagrangian(Vec& x) const {
@@ -120,6 +118,7 @@ class CartPoleProblem {
   }
 
   void hessian(const Vec& x, std::shared_ptr<CSRMat<T>>& mat) const {
+    mat->zero();
     cart_collect.add_hessian(*x, *mat);
     trap_collect.add_hessian(*x, *mat);
     con_collect.add_hessian(*x, *mat);
