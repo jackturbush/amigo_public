@@ -7,18 +7,18 @@ namespace mdgo {
 
 enum class VectorType { HOST_AND_DEVICE, DEVICE_ONLY, HOST_ONLY };
 
-template <typename T, int dim = 1>
+template <typename T>
 class Vector {
  public:
-  Vector(int length, VectorType vtype = VectorType::HOST_AND_DEVICE)
-      : length(length), vtype(vtype), h_array(nullptr), d_array(nullptr) {
+  Vector(int size, VectorType vtype = VectorType::HOST_AND_DEVICE)
+      : size(size), vtype(vtype), h_array(nullptr), d_array(nullptr) {
     if (vtype == VectorType::HOST_AND_DEVICE ||
         vtype == VectorType::HOST_ONLY) {
-      h_array = new T[length * dim];
+      h_array = new T[size];
     }
     if (vtype == VectorType::HOST_AND_DEVICE ||
         vtype == VectorType::DEVICE_ONLY) {
-      // cudaMalloc((void **)&d_array, length * dim * sizeof(T));
+      // cudaMalloc((void **)&d_array, size * sizeof(T));
     }
   }
 
@@ -32,18 +32,18 @@ class Vector {
   }
 
   void host_to_device() {
-    // cudaMemcpy(d_array, h_array, length * dim * sizeof(T),
+    // cudaMemcpy(d_array, h_array, size * sizeof(T),
     //            cudaMemcpyHostToDevice);
   }
 
   void device_to_host() {
-    // cudaMemcpy(h_array, d_array, length * dim * sizeof(T),
+    // cudaMemcpy(h_array, d_array, size * sizeof(T),
     //            cudaMemcpyDeviceToHost);
   }
 
   void zero() {
     if (h_array) {
-      memset(h_array, 0, length * dim * sizeof(T));
+      memset(h_array, 0, size * sizeof(T));
     }
   }
 
@@ -53,7 +53,7 @@ class Vector {
       std::mt19937 gen(rd());
       std::uniform_real_distribution<T> dis(low, high);
 
-      for (int i = 0; i < length * dim; i++) {
+      for (int i = 0; i < size; i++) {
         h_array[i] = dis(gen);
       }
     }
@@ -61,7 +61,7 @@ class Vector {
 
   void axpy(T alpha, Vector<T, dim>& x) {
     if (h_array && x.h_array) {
-      for (int i = 0; i < length * dim; i++) {
+      for (int i = 0; i < size; i++) {
         h_array[i] += alpha * x.h_array[i];
       }
     }
@@ -70,7 +70,7 @@ class Vector {
   T dot(const Vector<T, dim>& x) const {
     T value = 0.0;
     if (h_array && x.h_array) {
-      for (int i = 0; i < length * dim; i++) {
+      for (int i = 0; i < size; i++) {
         value += h_array[i] * x.h_array[i];
       }
     }
@@ -79,14 +79,13 @@ class Vector {
 
   void scale(T alpha) {
     if (h_array) {
-      for (int i = 0; i < length * dim; i++) {
+      for (int i = 0; i < size; i++) {
         h_array[i] *= alpha;
       }
     }
   }
 
-  int get_length() const { return length; }
-  int get_size() const { return length * dim; }
+  int get_size() const { return size; }
 
   T* get_host_array() { return h_array; }
   const T* get_host_array() const { return h_array; }
@@ -95,7 +94,7 @@ class Vector {
   const T* get_device_array() const { return d_array; }
 
  private:
-  int length;
+  int size;
   VectorType vtype;
   T* h_array;  // Host data
   T* d_array;  // Device data

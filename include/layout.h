@@ -9,15 +9,14 @@ namespace mdgo {
  *
  * @tparam Component
  */
-template <class Component>
+template <int ncomp>
 class IndexLayout {
  public:
-  static constexpr int ncomp = Component::ncomp;
-
-  IndexLayout(Vector<int, Component::ncomp> &indices) : indices(indices) {}
+  IndexLayout() {}
+  IndexLayout(Vector<int> &indices_) : indices(indices_) {}
   ~IndexLayout() {}
 
-  int get_length() const { return indices.get_length(); }
+  int get_length() const { return indices.get_size() / ncomp; }
 
   template <typename T, int dim, class ArrayType>
   void get_values(int index, const Vector<T, dim> &vec,
@@ -48,7 +47,7 @@ class IndexLayout {
   }
 
  private:
-  Vector<int, Component::ncomp> &indices;
+  Vector<int> indices;
 };
 
 }  // namespace mdgo
