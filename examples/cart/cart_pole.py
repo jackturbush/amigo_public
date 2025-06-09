@@ -1,8 +1,8 @@
 import amigo as am
 
-
 final_time = 2.0
 num_time_steps = 200
+
 
 class TrapezoidRule(am.Component):
     def __init__(self):
@@ -19,7 +19,7 @@ class TrapezoidRule(am.Component):
         self.add_output("res")
 
         return
-    
+
     def compute(self):
         dt = self.constants["dt"]
 
@@ -31,6 +31,7 @@ class TrapezoidRule(am.Component):
         self.outputs["res"] = q2 - q1 - 0.5 * dt * (q1dot + q2dot)
 
         return
+
 
 class CartComponent(am.Component):
     def __init__(self):
@@ -87,7 +88,27 @@ class CartComponent(am.Component):
 
 cart = CartComponent()
 trap = TrapezoidRule()
-print(cart.generate_cpp())
-print(cart.generate_pybind11())
 
-print(trap.generate_cpp())
+module_name = "cart_pole"
+model = am.Model(module_name)
+
+model.add("cart", num_time_steps + 1, cart)
+model.add("trap", 4 * num_time_steps, trap)
+
+model.generate_cpp()
+
+# Add the connections
+for i in range(4):
+    start = i * num_time_steps
+    end = (i + 1) * num_time_steps
+    # Connect the state variables
+    model.connect(f"cart.q[:{num_time_steps}, {i}]", f"trap.q1[{start}:{end}]")
+    model.connect(f"cart.q[1:, {i}]", f"trap.q2[{start}:{end}]")
+
+    # Connect the state rates
+    model.connect(f"cart.qdot[:-1, {i}]", f"trap.q1dot[{start}:{end}]")
+    model.connect(f"cart.qdot[1:, {i}]", f"trap.q2dot[{start}:{end}]")
+
+model.initialize()
+
+print("num_variables = ", model.num_variables)

@@ -61,7 +61,7 @@ def _generate_cpp_input_decl(
                 decl = f"A2D::A2DObj<A2D::Vec<{template_name}, {shape}>&> {var_name}"
             lines.append(
                 f"{decl}(A2D::get<{index + offset}>({input_name}), A2D::get<{index + offset}>({grad_name}), "
-                + f"A2D::get<{index + offset}>({prod_name}), A2D::get<{index + offset}>({hprod_name}),)"
+                + f"A2D::get<{index + offset}>({prod_name}), A2D::get<{index + offset}>({hprod_name}))"
             )
 
     return lines
@@ -475,9 +475,21 @@ class Component:
         self.outputs.add(name, type=type, shape=shape, label=label)
         return
 
+    def get_var_shapes(self):
+        var_shapes = {}
+        for name in self.inputs:
+            shape, _, _ = self.inputs.get_info(name)
+            var_shapes[name] = shape
+
+        for name in self.outputs:
+            shape, _, _ = self.outputs.get_info(name)
+            var_shapes[name] = shape
+
+        return var_shapes
+
     def _get_input_statement(self, template_name="T__"):
         # Generate the using statement
-        using = f"using Input = A2D::VarType<{template_name}"
+        using = f"using Input = A2D::VarTuple<{template_name}"
 
         input = self.inputs.generate_cpp_types(template_name=template_name)
         output = self.outputs.generate_cpp_types(template_name=template_name)
@@ -526,20 +538,20 @@ class Component:
             if mode == "eval":
                 cpp += (
                     "  "
-                    + f"static T lagrange(const Input& {input_name}) const"
+                    + f"static {template_name} lagrange(Input& {input_name})"
                     + " {\n"
                 )
             elif mode == "rev":
                 cpp += (
                     "  "
-                    f"static void gradient(Input& {input_name}, Input& {grad_name}) const"
+                    f"static void gradient(Input& {input_name}, Input& {grad_name})"
                     + " {\n"
                 )
             elif mode == "hprod":
                 cpp += (
                     "  "
                     f"static void hessian(Input& {input_name}, Input& {prod_name}, "
-                    f"Input& {grad_name}, Input& {hprod_name}) const" + " {\n"
+                    f"Input& {grad_name}, Input& {hprod_name})" + " {\n"
                 )
 
             in_decl = self.inputs.generate_cpp_input_decl(
@@ -564,6 +576,12 @@ class Component:
                 hprod_name=hprod_name,
             )
             for line in out_decl:
+                cpp += "    " + line + ";\n"
+
+            var_decl = self.vars.generate_cpp_decl(
+                mode=mode, template_name=template_name
+            )
+            for line in var_decl:
                 cpp += "    " + line + ";\n"
 
             out_decl = self.outputs.generate_cpp_decl(
@@ -600,12 +618,12 @@ class Component:
 
         return cpp
 
-    def generate_pybind11(self, module_name="mod"):
-        cls = f"amigo::SerialComponentSet<double, {self.name}<double>>"
+    def generate_pybind11(self, mod_ident="mod"):
+        cls = f"amigo::SerialComponentSet<double, amigo::{self.name}<double>>"
 
         module_class_name = f'"{self.name}"'
 
         cpp = f"py::class_<{cls}, amigo::ComponentSet<double>, std::shared_ptr<{cls}>>"
-        cpp += f"({module_name}, {module_class_name}).def(py::init<>())"
+        cpp += f"({mod_ident}, {module_class_name}).def(py::init<>())" + "\n"
 
         return cpp
