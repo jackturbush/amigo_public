@@ -1,11 +1,11 @@
-#ifndef MDGO_CART_COMPONENT_H
-#define MDGO_CART_COMPONENT_H
+#ifndef AMIGO_CART_COMPONENT_H
+#define AMIGO_CART_COMPONENT_H
 
 #include <map>
 
 #include "a2dcore.h"
 
-namespace mdgo {
+namespace amigo {
 
 template <typename T>
 class CartPoleComponent {
@@ -164,6 +164,6 @@ class CartPoleComponent {
   T m2;  // Mass attached to the end of the pole
 };
 
-}  // namespace mdgo
+}  // namespace amigo
 
-#endif  // MDGO_CART_COMPONENT_H
+#endif  // AMIGO_CART_COMPONENT_H
