@@ -71,7 +71,7 @@ ext_modules = [
         include_dirs=inc_dirs,
         libraries=libs,
         library_dirs=lib_dirs,
-        extra_compile_args=["-std=c++17"],
+        extra_compile_args=["-std=c++17", "-g", "-O0"],
     )
 ]
 

@@ -15,7 +15,7 @@ class SerialComponentSet : public ComponentSet<T> {
   static constexpr int ncomp = Component::ncomp;
   using Input = typename Component::Input;
 
-  SerialComponentSet(Vector<int> &indices) : layout(indices) {}
+  SerialComponentSet(std::shared_ptr<Vector<int>> indices) : layout(indices) {}
 
   int get_max_dof() const {
     int index[ncomp];
@@ -99,7 +99,6 @@ class SerialComponentSet : public ComponentSet<T> {
   }
 
  private:
-  Component comp;
   IndexLayout<ncomp> layout;
 };
 

@@ -1,6 +1,7 @@
 import numpy as np
 import ast
 import importlib
+from .amigo import VectorInt, OptimizationProblem
 
 
 def import_class(module_name, class_name):
@@ -23,12 +24,48 @@ class ComponentSet:
     def __init__(self, name, comp_obj, var_shapes, index_pool):
         self.name = name
         self.comp_obj = comp_obj
+        self.class_name = comp_obj.name
         self.vars = {}
         for var_name, shape in var_shapes.items():
             self.vars[var_name] = index_pool.allocate(shape)
 
     def get_var(self, varname):
         return self.vars[varname]
+    
+    def create_model(self, module_name):
+        size = 0
+        dim = 0
+        for name in self.vars:
+            shape = self.vars[name].shape
+            size += np.prod(shape)
+
+            if len(shape) == 1:
+                dim += 1
+            else:
+                dim += np.prod(shape[1:])
+
+        # Set the entries of the vectors
+        vec = VectorInt(size)
+        array = vec.get_array()
+
+        offset = 0
+        for name in self.vars:
+            shape = self.vars[name].shape
+            if len(shape) == 1:
+                array[offset::dim] = self.vars[name][:]
+                offset += 1
+            elif len(shape) == 2:
+                for i in range(shape[1]):
+                    array[offset::dim] = self.vars[name][:, i]
+                    offset += 1
+            elif len(shape) == 3:
+                for i in range(shape[1]):
+                    for i in range(shape[2]):
+                        array[offset::dim] = self.vars[name][:, i, j]
+                        offset += 1
+        
+        # Create the object
+        return import_class(module_name, self.class_name)(vec)
 
 
 class Model:
@@ -177,6 +214,13 @@ class Model:
         self.num_variables = counter
 
         return
+    
+    def create_opt_problem(self):
+        objs = []
+        for name, comp in self.comp.items():
+            objs.append(comp.create_model(self.module_name))
+
+        return OptimizationProblem(objs)
 
     def print_indices(self):
         for comp_name, comp in self.comp.items():

@@ -112,3 +112,17 @@ for i in range(4):
 model.initialize()
 
 print("num_variables = ", model.num_variables)
+
+prob = model.create_opt_problem()
+mat = prob.create_csr_matrix()
+
+x = prob.create_vector()
+
+# Set some initial values
+x_array = x.get_array()
+x_array[:] = 1.0
+
+grad = prob.create_vector()
+prob.gradient(x, grad)
+
+print(grad[:])

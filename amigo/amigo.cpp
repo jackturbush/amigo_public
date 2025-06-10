@@ -7,6 +7,79 @@
 
 namespace py = pybind11;
 
+// Templated wrapper function
+template <typename T>
+void bind_vector(py::module_ &m, const std::string &name) {
+  py::class_<amigo::Vector<T>, std::shared_ptr<amigo::Vector<T>>>(m,
+                                                                  name.c_str())
+      .def(py::init<int>())
+      .def("zero", &amigo::Vector<T>::zero)
+      .def("axpy", &amigo::Vector<T>::axpy)
+      .def("scale", &amigo::Vector<T>::scale)
+      .def("get_size", &amigo::Vector<T>::get_size)
+      .def("__getitem__",
+           [](const amigo::Vector<T> &v, py::object index) -> py::object {
+             if (py::isinstance<py::int_>(index)) {
+               ssize_t i = index.cast<ssize_t>();
+               if (i < 0) i += v.get_size();
+               if (i < 0 || i >= static_cast<ssize_t>(v.get_size())) {
+                 throw py::index_error();
+               }
+               return py::cast(v[i]);
+             } else if (py::isinstance<py::slice>(index)) {
+               py::slice slice = index.cast<py::slice>();
+               size_t start, stop, step, slicelength;
+               if (!slice.compute(v.get_size(), &start, &stop, &step,
+                                  &slicelength)) {
+                 throw py::error_already_set();
+               }
+
+               std::vector<T> result;
+               for (size_t i = 0; i < slicelength; i++) {
+                 result.push_back(v[start + i * step]);
+               }
+
+               return py::cast(result);
+             } else {
+               throw py::type_error("Invalid index type");
+             }
+           })
+      .def("__setitem__",
+           [](amigo::Vector<T> &v, py::object index, py::object value) {
+             if (py::isinstance<py::int_>(index)) {
+               ssize_t i = index.cast<ssize_t>();
+               if (i < 0) i += v.get_size();
+               if (i < 0 || i >= static_cast<ssize_t>(v.get_size())) {
+                 throw py::index_error();
+               }
+               v[i] = value.cast<T>();
+             } else if (py::isinstance<py::slice>(index)) {
+               py::slice slice = index.cast<py::slice>();
+               size_t start, stop, step, slicelength;
+               if (!slice.compute(v.get_size(), &start, &stop, &step,
+                                  &slicelength)) {
+                 throw py::error_already_set();
+               }
+
+               std::vector<T> values = value.cast<std::vector<T>>();
+               if (values.size() != slicelength) {
+                 throw std::runtime_error("Slice assignment size mismatch");
+               }
+
+               for (size_t i = 0; i < slicelength; i++) {
+                 v[start + i * step] = values[i];
+               }
+             } else {
+               throw py::type_error("Invalid index type");
+             }
+           })
+      .def("__len__", &amigo::Vector<T>::get_size)
+      .def("get_array", [](const amigo::Vector<T> &self) -> py::array_t<T> {
+        return py::array_t<T>({self.get_size()}, {sizeof(T)},
+                              self.get_host_array(), py::cast(self));
+      });
+}
+
 PYBIND11_MODULE(amigo, mod) {
   mod.doc() = "Amigo: A friendly library for MDO on GPUs";
 
@@ -28,47 +101,21 @@ PYBIND11_MODULE(amigo, mod) {
         return data;
       });
 
-  // py::class_<amigo::ComponentSet<double>>(mod, "ComponentSet")
-  //     .def(py::init<>());
+  bind_vector<int>(mod, "VectorInt");
+  bind_vector<double>(mod, "Vector");
 
-  py::class_<amigo::OptimizationProblem<double>>(mod, "OptimizationProblem")
+  py::class_<amigo::ComponentSet<double>,
+             std::shared_ptr<amigo::ComponentSet<double>>>(mod, "ComponentSet");
+
+  py::class_<amigo::OptimizationProblem<double>,
+             std::shared_ptr<amigo::OptimizationProblem<double>>>(
+      mod, "OptimizationProblem")
       .def(
           py::init<std::vector<std::shared_ptr<amigo::ComponentSet<double>>>>())
-      .def("get_num_dof", &amigo::OptimizationProblem<double>::get_num_dof)
-      .def("lagrangian",
-           [](amigo::OptimizationProblem<double> &self, py::array_t<double> x) {
-             int size = self.get_num_dof();
-             auto x_vec = self.create_vector();
-             std::memcpy(x_vec->get_host_array(), x.data(),
-                         size * sizeof(double));
-             return self.lagrangian(x_vec);
-           })
-      .def("gradient",
-           [](amigo::OptimizationProblem<double> &self,
-              py::array_t<double> x) -> py::array_t<double> {
-             int size = self.get_num_dof();
-             auto g_vec = self.create_vector();
-             auto x_vec = self.create_vector();
-
-             std::memcpy(x_vec->get_host_array(), x.data(),
-                         size * sizeof(double));
-
-             self.gradient(x_vec, g_vec);
-
-             py::array_t<double> g(size);
-             std::memcpy(g.mutable_data(), g_vec->get_host_array(),
-                         size * sizeof(double));
-             return g;
-           })
+      .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
+      .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
+      .def("gradient", &amigo::OptimizationProblem<double>::gradient)
       .def("create_csr_matrix",
            &amigo::OptimizationProblem<double>::create_csr_matrix)
-      .def("hessian", [](amigo::OptimizationProblem<double> &self,
-                         py::array_t<double> x,
-                         std::shared_ptr<amigo::CSRMat<double>> &mat) {
-        int size = self.get_num_dof();
-        auto x_vec = self.create_vector();
-        std::memcpy(x_vec->get_host_array(), x.data(), size * sizeof(double));
-
-        self.hessian(x_vec, mat);
-      });
+      .def("hessian", &amigo::OptimizationProblem<double>::hessian);
 }

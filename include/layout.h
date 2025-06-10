@@ -12,15 +12,14 @@ namespace amigo {
 template <int ncomp>
 class IndexLayout {
  public:
-  IndexLayout() {}
-  IndexLayout(Vector<int> &indices_) : indices(indices_) {}
+  IndexLayout(std::shared_ptr<Vector<int>> indices) : indices(indices) {}
   ~IndexLayout() {}
 
-  int get_length() const { return indices.get_size() / ncomp; }
+  int get_length() const { return indices->get_size() / ncomp; }
 
   template <typename T, class ArrayType>
   void get_values(int index, const Vector<T> &vec, ArrayType &values) const {
-    const int *indx = indices.get_host_array();
+    const int *indx = indices->get_host_array();
     const T *vec_values = vec.get_host_array();
     for (int i = 0; i < ncomp; i++) {
       values[i] = vec_values[indx[ncomp * index + i]];
@@ -29,7 +28,7 @@ class IndexLayout {
 
   template <typename T, class ArrayType>
   void add_values(int index, const ArrayType &values, Vector<T> &vec) const {
-    const int *indx = indices.get_host_array();
+    const int *indx = indices->get_host_array();
     T *vec_values = vec.get_host_array();
     for (int i = 0; i < ncomp; i++) {
       vec_values[indx[ncomp * index + i]] += values[i];
@@ -38,14 +37,14 @@ class IndexLayout {
 
   template <class ArrayType>
   void get_indices(int index, ArrayType &idx) const {
-    const int *indx = indices.get_host_array();
+    const int *indx = indices->get_host_array();
     for (int i = 0; i < ncomp; i++) {
       idx[i] = indx[ncomp * index + i];
     }
   }
 
  private:
-  Vector<int> indices;
+  std::shared_ptr<Vector<int>> indices;
 };
 
 }  // namespace amigo

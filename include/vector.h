@@ -85,6 +85,9 @@ class Vector {
     }
   }
 
+  T& operator[](int i) { return h_array[i]; }
+  const T& operator[](int i) const { return h_array[i]; }
+
   int get_size() const { return size; }
 
   T* get_host_array() { return h_array; }
