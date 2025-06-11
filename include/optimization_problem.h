@@ -11,17 +11,9 @@ class OptimizationProblem {
   using Vec = std::shared_ptr<Vector<T>>;
   using Mat = std::shared_ptr<CSRMat<T>>;
 
-  OptimizationProblem(std::vector<std::shared_ptr<ComponentSet<T>>> comps)
-      : comps(comps) {
-    ndof = 0;
-    for (size_t i = 0; i < comps.size(); i++) {
-      int max_dof = comps[i]->get_max_dof();
-      if (max_dof > ndof) {
-        ndof = max_dof;
-      }
-    }
-    ndof++;
-  }
+  OptimizationProblem(int ndof,
+                      std::vector<std::shared_ptr<ComponentSet<T>>> comps)
+      : ndof(ndof), comps(comps) {}
 
   int get_num_dof() const { return ndof; }
   Vec create_vector() const { return std::make_shared<Vector<T>>(ndof); }
@@ -91,8 +83,8 @@ class OptimizationProblem {
   }
 
  private:
-  std::vector<std::shared_ptr<ComponentSet<T>>> comps;
   int ndof;
+  std::vector<std::shared_ptr<ComponentSet<T>>> comps;
 };
 
 }  // namespace amigo

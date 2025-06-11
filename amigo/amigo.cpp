@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "amigo_include_paths.h"
 #include "csr_matrix.h"
 #include "optimization_problem.h"
 
@@ -84,6 +85,9 @@ void bind_vector(py::module_ &m, const std::string &name) {
 PYBIND11_MODULE(amigo, mod) {
   mod.doc() = "Amigo: A friendly library for MDO on GPUs";
 
+  mod.attr("A2D_INCLUDE_PATH") = A2D_INCLUDE_PATH;
+  mod.attr("AMIGO_INCLUDE_PATH") = AMIGO_INCLUDE_PATH;
+
   py::class_<amigo::CSRMat<double>, std::shared_ptr<amigo::CSRMat<double>>>(
       mod, "CSRMat")
       .def("get_nonzero_structure",
@@ -112,7 +116,8 @@ PYBIND11_MODULE(amigo, mod) {
              std::shared_ptr<amigo::OptimizationProblem<double>>>(
       mod, "OptimizationProblem")
       .def(
-          py::init<std::vector<std::shared_ptr<amigo::ComponentSet<double>>>>())
+          py::init<int,
+                   std::vector<std::shared_ptr<amigo::ComponentSet<double>>>>())
       .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
       .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
       .def("gradient", &amigo::OptimizationProblem<double>::gradient)

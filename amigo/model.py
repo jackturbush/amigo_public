@@ -1,18 +1,18 @@
 import numpy as np
 import ast
 import importlib
-from .amigo import VectorInt, OptimizationProblem
+from .amigo import VectorInt, OptimizationProblem, AMIGO_INCLUDE_PATH, A2D_INCLUDE_PATH
 from .component import Component
 from typing import Self
 from collections import defaultdict
 
 
-def _import_class(module_name, class_name):
+def _import_class(module_name: str, class_name: str):
     module = importlib.import_module(module_name)
     return getattr(module, class_name)
 
 
-def _parse_var_expr(expr):
+def _parse_var_expr(expr: str):
     """
     Parse an expression like:
       - 'model.group.var'
@@ -81,7 +81,7 @@ def _eval_ast_index(node):
 
 
 class AliasTracker:
-    def __init__(self, size):
+    def __init__(self, size: int):
         self.parent = np.arange(size, dtype=int)
         self.rank = np.zeros(size, dtype=int)
 
@@ -90,7 +90,7 @@ class AliasTracker:
             self.parent[var] = self._find(self.parent[var])
         return self.parent[var]
 
-    def alias(self, var1, var2):
+    def alias(self, var1: int, var2: int):
         root1 = self._find(var1)
         root2 = self._find(var2)
         if root1 == root2:
@@ -103,7 +103,7 @@ class AliasTracker:
             if self.rank[root1] == self.rank[root2]:
                 self.rank[root1] += 1
 
-    def get_alias_group(self, var):
+    def get_alias_group(self, var: int):
         root = self._find(var)
         return [v for v in range(len(self.parent)) if self._find(v) == root]
 
@@ -126,7 +126,7 @@ class GlobalIndexPool:
         return indices
 
 
-class ComponentSet:
+class ComponentGroup:
     def __init__(self, name: str, size: int, comp_obj, var_shapes, index_pool):
         self.name = name
         self.size = size
@@ -176,7 +176,13 @@ class ComponentSet:
 
 
 class Model:
-    def __init__(self, module_name):
+    def __init__(self, module_name: str):
+        """
+        Initialize the model class.
+
+        Args:
+            module_name (str): Name of the module that contains the component classes
+        """
         self.module_name = module_name
         self.comp = {}
         self.index_pool = GlobalIndexPool()
@@ -185,6 +191,11 @@ class Model:
     def generate_cpp(self):
         """
         Generate the C++ header and pybind11 wrapper for the model.
+
+        This code automatically generates the files module_name.h (containing the C++ Component
+        definitions) and module_name.cpp (containing the pybind11 wrapper).
+
+        The wrapper must be compiled before the optimization will run.
         """
 
         # C++ file contents
@@ -233,7 +244,17 @@ class Model:
 
     def add_component(self, name: str, size: int, comp_obj: Component):
         """
-        Add a single component under the
+        Add a component group to the model.
+
+        This function adds the component group to the model. No ordering or connection
+        operations are performed until initialize() is called. All inputs and outputs from
+        comp_obj are referred to by: name.var or name.var[i, j], where numpy-type index
+        slicing can be used to denote slices of variables.
+
+        Args:
+            name (str): Name of the component group
+            size (int): Number of times that the component is repeated within the group
+            comp_obj (Component): Class derived from a component object
         """
         if name in self.comp:
             raise ValueError(f"Cannot add two components with the same name")
@@ -248,7 +269,7 @@ class Model:
             else:
                 var_shapes[var_name] = (size, var_shapes[var_name])
 
-        self.comp[name] = ComponentSet(
+        self.comp[name] = ComponentGroup(
             name, size, comp_obj, var_shapes, self.index_pool
         )
 
@@ -256,7 +277,16 @@ class Model:
 
     def add_model(self, name: str, model: Self):
         """
-        Add the given model as a sub-model
+        Add an entire model class as a sub-model.
+
+        This function adds the entire sub-model class. The sub-model name must be unique,
+        but the same model sub-class can be added more than once. All inputs and outputs
+        from the sub-model are referred to by name.comp_name.var or name.comp_name.var[i, j],
+        where numpy-type index slicing ca be used.
+
+        Args:
+            name (str): Name of the sub-model
+            model (Model): An instance of the Model class object
         """
         if name in self.comp:
             raise ValueError(
@@ -278,13 +308,29 @@ class Model:
         return
 
     def connect(self, src_expr: str, tgt_expr: str):
-        # Add the connection for later use
+        """
+        Impose that two variables are the same.
+
+        You cannot connect intputs to outputs. You can only connect inputs to inputs and
+        outputs to outputs. The outputs are used as constraints within the optimization problem.
+        The inputs are the design variables.
+
+        The variables are specified as sub_model.group.var[0, 1] or sub_model.group.var[:, 1]
+        or sub_model.group.var, or any sliced numpy view.
+
+        The purpose of the connection statements is to enforce which input variables are the same.
+        If outputs are linked, then the resulting constraints are summed across all group components.
+
+        Args:
+            src_expr (str): Source variable name
+            tgt_expr (str): Target variable name
+        """
         self.connections.append((src_expr, tgt_expr))
         return
 
     def initialize(self):
         """
-        Initialize the variable indices for each component
+        Initialize the variable indices for each component and resolve all connections.
         """
 
         # Allocate the AliasTracker
@@ -293,11 +339,11 @@ class Model:
         for a_expr, b_expr in self.connections:
             a_path, a_slice = _parse_var_expr(a_expr)
             a_var = ".".join(a_path)
-            a_indices = self.get_vars(a_var)[a_slice]
+            a_indices = self.get_var_indices(a_var)[a_slice]
 
             b_path, b_slice = _parse_var_expr(b_expr)
             b_var = ".".join(b_path)
-            b_indices = self.get_vars(b_var)[b_slice]
+            b_indices = self.get_var_indices(b_var)[b_slice]
 
             if a_indices.shape != b_indices.shape:
                 raise ValueError(
@@ -321,6 +367,7 @@ class Model:
 
             counter += 1
 
+        # Order any remaining variables
         for name, comp in self.comp.items():
             for varname, array in comp.vars.items():
                 arr = array.ravel()
@@ -336,7 +383,18 @@ class Model:
 
         return
 
-    def get_vars(self, name: str):
+    def get_var_indices(self, name: str):
+        """
+        Get the indices associated with the variable.
+
+        You can use this to access the indices of variables within the model. For instance,
+        get_var_inidces("sub_model.comp.vars") will return the indices for all of the vars
+        under sub_model.comp and get_var_inidces("sub_model.comp.vars[2:5, :]") will return
+        a sliced version of the indices.
+
+        Args:
+            name (str): The name of the variable indices to retrieve
+        """
         path, indices = _parse_var_expr(name)
         comp_name = ".".join(path[:-1])
         var_name = path[-1]
@@ -347,14 +405,40 @@ class Model:
             return self.comp[comp_name].get_var(var_name)[indices]
 
     def create_opt_problem(self):
+        """
+        Create the optimization problem object that is used to evaluate the gradient and
+        Hessian of the Lagrangian.
+        """
         objs = []
         for name, comp in self.comp.items():
             objs.append(comp.create_model(self.module_name))
 
-        return OptimizationProblem(objs)
+        return OptimizationProblem(self.num_variables, objs)
 
-    def print_indices(self):
-        for comp_name, comp in self.comp.items():
-            print(f"Component: {comp_name}")
-            for varname, array in comp.vars.items():
-                print(f"  {varname}:\n{array}")
+    def build_module(self):
+        """
+        Quick setup for building the extension module. Some care is required with this.
+        """
+        from setuptools import setup, Extension
+        import pybind11
+        from pybind11.setup_helpers import Pybind11Extension, build_ext
+
+        pybind11_include = pybind11.get_include()
+        amigo_include = AMIGO_INCLUDE_PATH
+        a2d_include = A2D_INCLUDE_PATH
+
+        # Create the Extension
+        ext_modules = [
+            Extension(
+                self.module_name,
+                sources=[f"{self.module_name}.cpp"],
+                depends=[f"{self.module_name}.h"],
+                extra_compile_args=["-std=c++17"],
+            )
+        ]
+
+        setup(
+            name=f"{self.module_name}",
+            ext_modules=ext_modules,
+            include_dirs=[amigo_include, pybind11_include, a2d_include],
+        )

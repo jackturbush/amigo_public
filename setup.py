@@ -7,7 +7,6 @@ import glob
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 import pybind11
 
-
 inc_dirs, lib_dirs, libs = [], [], []
 
 inc_dirs.append("include")
@@ -26,6 +25,15 @@ a2d_include = os.path.join(os.environ.get("HOME"), "git", "a2d", "include")
 #     os.path.join(os.environ.get("HOME"), "git", "tacs", "extern", "metis", "lib")
 # )
 # libs.append("metis")
+
+# Optionally write the include path to a header or config
+with open("include/amigo_include_paths.h", "w") as f:
+    f.write(f"#ifndef AMIGO_INCLUDE_PATHS_H\n")
+    f.write(f"#define AMIGO_INCLUDE_PATHS_H\n")
+    f.write(f'#define A2D_INCLUDE_PATH "{a2d_include}"\n')
+    f.write(f'#define AMIGO_INCLUDE_PATH "{os.path.abspath("include")}"\n')
+    f.write(f"#endif  // AMIGO_INCLUDE_PATHS_H\n")
+
 
 if sys.platform == "darwin":
     from distutils import sysconfig

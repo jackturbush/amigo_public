@@ -1,5 +1,6 @@
 import amigo as am
 import numpy as np
+import sys
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 import matplotlib.pylab as plt
@@ -227,8 +228,8 @@ class Optimizer:
     def plot(self, x, base=""):
 
         t = np.linspace(0, final_time, num_time_steps + 1)
-        q_idx = self.model.get_vars(base + "cart.q")
-        x_idx = self.model.get_vars(base + "cart.x")
+        q_idx = self.model.get_var_indices(base + "cart.q")
+        x_idx = self.model.get_var_indices(base + "cart.x")
 
         d = x[q_idx[:, 0]]
         theta = x[q_idx[:, 1]]
@@ -293,7 +294,7 @@ class Optimizer:
 
     def visualize(self, x, L=0.5, base=""):
         with plt.style.context(niceplots.get_style()):
-            q_idx = self.model.get_vars(base + "cart.q")
+            q_idx = self.model.get_var_indices(base + "cart.q")
 
             d = x[q_idx[:, 0]]
             theta = x[q_idx[:, 1]]
@@ -379,8 +380,6 @@ def create_cart_model(module_name="cart_pole"):
 m1 = create_cart_model()
 m2 = create_cart_model()
 
-print("\nCreating combined model now...\n")
-
 model = am.Model("cart_pole")
 model.add_model("cart1", m1)
 model.add_model("cart2", m2)
@@ -388,7 +387,9 @@ model.add_model("cart2", m2)
 # model.connect("cart2.cart.x", "cart1.cart.x")
 model.initialize()
 
-model.generate_cpp()
+if "build_ext" in sys.argv:
+    model.generate_cpp()
+    model.build_module()
 
 print("num_variables = ", model.num_variables)
 
@@ -401,7 +402,7 @@ x_array[:] = 0.0
 
 # # Set the initial conditions based on the varaibles
 for q_var in ["cart1.cart.q", "cart2.cart.q"]:
-    q_idx = model.get_vars(q_var)
+    q_idx = model.get_var_indices(q_var)
     x_array[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
     x_array[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
     x_array[q_idx[:, 2]] = 1.0
