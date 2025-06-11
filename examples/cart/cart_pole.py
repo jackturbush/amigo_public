@@ -114,6 +114,7 @@ class Objective(am.Component):
 
         return
 
+
 # Initial conditions are q = 0
 class InitialConditions(am.Component):
     def __init__(self):
@@ -125,6 +126,7 @@ class InitialConditions(am.Component):
     def compute(self):
         q = self.inputs["q"]
         self.outputs["res"] = [q[0], q[1], q[2], q[3]]
+
 
 # Set the final conditions
 class FinalConditions(am.Component):
@@ -161,7 +163,7 @@ class Optimizer:
     def check(self, dh=1e-7):
         x = self.x.get_array()
         if self.x_init is not None:
-            x[:] = self.x_init 
+            x[:] = self.x_init
 
         px = np.random.uniform(size=x.shape)
 
@@ -174,7 +176,7 @@ class Optimizer:
         g2 = self.gradient().copy()
         fd = (g2 - g1) / dh
 
-        err = (fd - ans)
+        err = fd - ans
 
         print("Max absolute error = ", np.max(np.absolute(err)))
         print("Max relative error = ", np.max(np.absolute(err / fd)))
@@ -196,7 +198,7 @@ class Optimizer:
     def optimize(self):
         x = self.x.get_array()
         if self.x_init is not None:
-            x[:] = self.x_init 
+            x[:] = self.x_init
 
         gnrms = []
 
@@ -221,12 +223,12 @@ class Optimizer:
                 x[:] -= 0.1 * p
 
         return x[:], gnrms
-    
-    def plot(self, x):
+
+    def plot(self, x, base=""):
 
         t = np.linspace(0, final_time, num_time_steps + 1)
-        q_idx = self.model.get_vars("cart", "q")
-        x_idx = self.model.get_vars("cart", "x")
+        q_idx = self.model.get_vars(base + "cart.q")
+        x_idx = self.model.get_vars(base + "cart.x")
 
         d = x[q_idx[:, 0]]
         theta = x[q_idx[:, 1]]
@@ -289,9 +291,9 @@ class Optimizer:
             fig.savefig("cart_residual_norm.svg")
             fig.savefig("cart_residual_norm.png")
 
-    def visualize(self, x, L=0.5):
+    def visualize(self, x, L=0.5, base=""):
         with plt.style.context(niceplots.get_style()):
-            q_idx = self.model.get_vars("cart", "q")
+            q_idx = self.model.get_vars(base + "cart.q")
 
             d = x[q_idx[:, 0]]
             theta = x[q_idx[:, 1]]
@@ -337,42 +339,56 @@ class Optimizer:
         return
 
 
-cart = CartComponent()
-trap = TrapezoidRule()
-obj = Objective()
-ic = InitialConditions()
-fc = FinalConditions()
+def create_cart_model(module_name="cart_pole"):
+    cart = CartComponent()
+    trap = TrapezoidRule()
+    obj = Objective()
+    ic = InitialConditions()
+    fc = FinalConditions()
 
-module_name = "cart_pole"
-model = am.Model(module_name)
+    module_name = "cart_pole"
+    model = am.Model(module_name)
 
-model.add("cart", num_time_steps + 1, cart)
-model.add("trap", 4 * num_time_steps, trap)
-model.add("obj", num_time_steps, obj)
-model.add("ic", 1, ic)
-model.add("fc", 1, fc)
+    model.add_component("cart", num_time_steps + 1, cart)
+    model.add_component("trap", 4 * num_time_steps, trap)
+    model.add_component("obj", num_time_steps, obj)
+    model.add_component("ic", 1, ic)
+    model.add_component("fc", 1, fc)
+
+    # Add the connections
+    for i in range(4):
+        start = i * num_time_steps
+        end = (i + 1) * num_time_steps
+        # Connect the state variables
+        model.connect(f"cart.q[:{num_time_steps}, {i}]", f"trap.q1[{start}:{end}]")
+        model.connect(f"cart.q[1:, {i}]", f"trap.q2[{start}:{end}]")
+
+        # Connect the state rates
+        model.connect(f"cart.qdot[:-1, {i}]", f"trap.q1dot[{start}:{end}]")
+        model.connect(f"cart.qdot[1:, {i}]", f"trap.q2dot[{start}:{end}]")
+
+    model.connect(f"cart.x[:-1]", f"obj.x1[:]")
+    model.connect(f"cart.x[1:]", f"obj.x2[:]")
+
+    model.connect("cart.q[0, :]", "ic.q[0, :]")
+    model.connect(f"cart.q[{num_time_steps}, :]", "fc.q[0, :]")
+
+    return model
+
+
+m1 = create_cart_model()
+m2 = create_cart_model()
+
+print("\nCreating combined model now...\n")
+
+model = am.Model("cart_pole")
+model.add_model("cart1", m1)
+model.add_model("cart2", m2)
+
+# model.connect("cart2.cart.x", "cart1.cart.x")
+model.initialize()
 
 model.generate_cpp()
-
-# Add the connections
-for i in range(4):
-    start = i * num_time_steps
-    end = (i + 1) * num_time_steps
-    # Connect the state variables
-    model.connect(f"cart.q[:{num_time_steps}, {i}]", f"trap.q1[{start}:{end}]")
-    model.connect(f"cart.q[1:, {i}]", f"trap.q2[{start}:{end}]")
-
-    # Connect the state rates
-    model.connect(f"cart.qdot[:-1, {i}]", f"trap.q1dot[{start}:{end}]")
-    model.connect(f"cart.qdot[1:, {i}]", f"trap.q2dot[{start}:{end}]")
-
-model.connect(f"cart.x[:-1]", f"obj.x1[:]")
-model.connect(f"cart.x[1:]", f"obj.x2[:]")
-
-model.connect("cart.q[0, :]", "ic.q[0, :]")
-model.connect(f"cart.q[{num_time_steps}, :]", "fc.q[0, :]")
-
-model.initialize()
 
 print("num_variables = ", model.num_variables)
 
@@ -381,17 +397,19 @@ mat = prob.create_csr_matrix()
 
 x = prob.create_vector()
 x_array = x.get_array()
+x_array[:] = 0.0
 
-# Set the initial conditions based on the varaibles
-q_idx = model.get_vars("cart", "q")
-x_array[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
-x_array[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
-x_array[q_idx[:, 2]] = 1.0
-x_array[q_idx[:, 3]] = 1.0
+# # Set the initial conditions based on the varaibles
+for q_var in ["cart1.cart.q", "cart2.cart.q"]:
+    q_idx = model.get_vars(q_var)
+    x_array[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
+    x_array[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
+    x_array[q_idx[:, 2]] = 1.0
+    x_array[q_idx[:, 3]] = 1.0
 
 opt = Optimizer(model, prob, x_init=x_array)
 xopt, gnrm = opt.optimize()
 
-opt.plot(xopt)
+opt.plot(xopt, base="cart1.")
 opt.plot_convergence(gnrm)
-opt.visualize(xopt)
+opt.visualize(xopt, base="cart1.")

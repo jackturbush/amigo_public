@@ -1,6 +1,7 @@
 #ifndef AMIGO_VECTOR_H
 #define AMIGO_VECTOR_H
 
+#include <algorithm>
 #include <random>
 
 namespace amigo {
@@ -15,6 +16,7 @@ class Vector {
     if (vtype == VectorType::HOST_AND_DEVICE ||
         vtype == VectorType::HOST_ONLY) {
       h_array = new T[size];
+      std::fill(h_array, h_array + size, T(0.0));
     }
     if (vtype == VectorType::HOST_AND_DEVICE ||
         vtype == VectorType::DEVICE_ONLY) {

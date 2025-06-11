@@ -452,6 +452,7 @@ class OutputSet:
 
         return lines
 
+
 class ObjectiveSet:
     def __init__(self):
         self.expr = {}
@@ -463,19 +464,19 @@ class ObjectiveSet:
             raise ValueError("Cannot add more than one objective")
         self.expr[name] = None
         return
-    
+
     def __setitem__(self, name, expr):
         if name not in self.expr:
             raise KeyError(f"{name} not the declared objective")
         self.expr[name] = expr
         return
-    
+
     def generate_cpp(self):
         for name in self.expr:
             rhs = self.expr[name].generate_cpp()
             return rhs
         return None
-    
+
 
 class Component:
     def __init__(self):
@@ -502,7 +503,7 @@ class Component:
     def add_output(self, name, type=float, shape=None, label="output"):
         self.outputs.add(name, type=type, shape=shape, label=label)
         return
-    
+
     def add_objective(self, name, type=float):
         self.objective.add(name, type=type)
         return
@@ -621,7 +622,7 @@ class Component:
             )
             for line in out_decl:
                 cpp += "    " + line + ";\n"
-                
+
             obj_expr = self.objective.generate_cpp()
             body = self.vars.generate_cpp(mode=mode)
             body.extend(self.outputs.generate_cpp(mode=mode, obj_expr=obj_expr))
