@@ -81,14 +81,11 @@ def _eval_ast_index(node):
 
 
 class AliasTracker:
-    def __init__(self):
-        self.parent = {}
+    def __init__(self, size):
+        self.parent = np.arange(size, dtype=int)
+        self.rank = np.zeros(size, dtype=int)
 
-    def _find(self, var):
-        # Initialize if not seen
-        if var not in self.parent:
-            self.parent[var] = var
-        # Path compression
+    def _find(self, var: int):
         if self.parent[var] != var:
             self.parent[var] = self._find(self.parent[var])
         return self.parent[var]
@@ -96,30 +93,48 @@ class AliasTracker:
     def alias(self, var1, var2):
         root1 = self._find(var1)
         root2 = self._find(var2)
-        if root1 != root2:
-            self.parent[root2] = root1  # or vice versa
+        if root1 == root2:
+            return
+        # Union by rank
+        if self.rank[root1] < self.rank[root2]:
+            self.parent[root1] = root2
+        else:
+            self.parent[root2] = root1
+            if self.rank[root1] == self.rank[root2]:
+                self.rank[root1] += 1
 
     def get_alias_group(self, var):
         root = self._find(var)
-        return [v for v in self.parent if self._find(v) == root]
+        return [v for v in range(len(self.parent)) if self._find(v) == root]
 
     def all_groups(self):
         groups = defaultdict(list)
-        for var in self.parent:
+        for var in range(len(self.parent)):
             root = self._find(var)
             groups[root].append(var)
         return list(groups.values())
 
 
+class GlobalIndexPool:
+    def __init__(self):
+        self.counter = 0
+
+    def allocate(self, shape):
+        size = np.prod(shape)
+        indices = np.arange(self.counter, self.counter + size).reshape(shape)
+        self.counter += size
+        return indices
+
+
 class ComponentSet:
-    def __init__(self, name: str, size: int, comp_obj, var_shapes):
+    def __init__(self, name: str, size: int, comp_obj, var_shapes, index_pool):
         self.name = name
         self.size = size
         self.comp_obj = comp_obj
         self.class_name = comp_obj.name
         self.vars = {}
         for var_name, shape in var_shapes.items():
-            self.vars[var_name] = -np.ones(shape, dtype=int)
+            self.vars[var_name] = index_pool.allocate(shape)
 
     def get_var(self, varname):
         return self.vars[varname]
@@ -164,8 +179,7 @@ class Model:
     def __init__(self, module_name):
         self.module_name = module_name
         self.comp = {}
-        # self.index_pool = GlobalIndexPool()
-        # self.tracker = SliceAliasTracker()
+        self.index_pool = GlobalIndexPool()
         self.connections = []
 
     def generate_cpp(self):
@@ -234,7 +248,9 @@ class Model:
             else:
                 var_shapes[var_name] = (size, var_shapes[var_name])
 
-        self.comp[name] = ComponentSet(name, size, comp_obj, var_shapes)
+        self.comp[name] = ComponentSet(
+            name, size, comp_obj, var_shapes, self.index_pool
+        )
 
         return
 
@@ -266,85 +282,33 @@ class Model:
         self.connections.append((src_expr, tgt_expr))
         return
 
-    def _normalize_slice_spec(self, slice_spec, shape):
-        """
-        Converts a slice spec (int, slice, or tuple of those) into a list of ranges,
-        compatible with the given shape (1D or 2D).
-        """
-        ndim = len(shape)
-
-        # Ensure it's a tuple
-        if slice_spec is None:
-            slice_spec = (slice(None),) * ndim
-        elif not isinstance(slice_spec, tuple):
-            slice_spec = (slice_spec,)
-
-        # Pad with slice(None) if necessary
-        slice_spec += (slice(None),) * (ndim - len(slice_spec))
-
-        if len(slice_spec) != ndim:
-            raise ValueError(
-                f"Slice spec dimension {len(slice_spec)} does not match shape {ndim}"
-            )
-
-        # Build ranges
-        ranges = []
-        for s, dim in zip(slice_spec, shape):
-            if isinstance(s, int):
-                s = s if s >= 0 else dim + s
-                if s < 0 or s >= dim:
-                    raise IndexError(
-                        f"Index {s} out of bounds for axis with size {dim}"
-                    )
-                ranges.append(range(s, s + 1))
-            elif isinstance(s, slice):
-                ranges.append(range(*s.indices(dim)))
-            else:
-                raise TypeError(f"Unsupported index type: {s}")
-
-        return ranges
-
-    def _get_var_connections(self, a_var, a_slice, a_shape, b_var, b_slice, b_shape):
-        a_ranges = self._normalize_slice_spec(a_slice, a_shape)
-        b_ranges = self._normalize_slice_spec(b_slice, b_shape)
-
-        a_indices = list(np.ndindex(*[len(r) for r in a_ranges]))
-        b_indices = list(np.ndindex(*[len(r) for r in b_ranges]))
-
-        if len(a_indices) != len(b_indices):
-            raise ValueError("Sliced regions are not the same size")
-
-        def format_index(name, ranges, idx):
-            actual_indices = [r[i] for r, i in zip(ranges, idx)]
-            return f"{name}[{', '.join(map(str, actual_indices))}]"
-
-        result = []
-        for a_idx, b_idx in zip(a_indices, b_indices):
-            a_str = format_index(a_var, a_ranges, a_idx)
-            b_str = format_index(b_var, b_ranges, b_idx)
-            result.append((a_str, b_str))
-
-        return result
-
     def initialize(self):
         """
         Initialize the variable indices for each component
         """
 
-        tracker = AliasTracker()
+        # Allocate the AliasTracker
+        tracker = AliasTracker(self.index_pool.counter)
+
         for a_expr, b_expr in self.connections:
             a_path, a_slice = _parse_var_expr(a_expr)
             a_var = ".".join(a_path)
-            a_shape = self.get_vars(a_var).shape
+            a_indices = self.get_vars(a_var)[a_slice]
 
             b_path, b_slice = _parse_var_expr(b_expr)
             b_var = ".".join(b_path)
-            b_shape = self.get_vars(b_var).shape
+            b_indices = self.get_vars(b_var)[b_slice]
 
-            for a, b in self._get_var_connections(
-                a_var, a_slice, a_shape, b_var, b_slice, b_shape
-            ):
+            if a_indices.shape != b_indices.shape:
+                raise ValueError(
+                    f"Incompatible shapes {a_expr} {a_indices.shape} and {b_expr} {b_indices.shape}"
+                )
+
+            for a, b in zip(a_indices.flatten(), b_indices.flatten()):
                 tracker.alias(a, b)
+
+        # Set up the variables so that they are contiguous
+        vars = -np.ones(self.index_pool.counter, dtype=int)
 
         # Order the variables
         counter = 0
@@ -352,9 +316,8 @@ class Model:
         # Order any aliased variables
         groups = tracker.all_groups()
         for group in groups:
-            for expr in group:
-                path, slice = _parse_var_expr(expr)
-                self.get_vars(".".join(path))[slice] = counter
+            for index in group:
+                vars[index] = counter
 
             counter += 1
 
@@ -363,9 +326,11 @@ class Model:
                 arr = array.ravel()
 
                 for i in range(arr.shape[0]):
-                    if arr[i] == -1:
-                        arr[i] = counter
+                    if vars[arr[i]] == -1:
+                        vars[arr[i]] = counter
                         counter += 1
+
+                    arr[i] = vars[arr[i]]
 
         self.num_variables = counter
 
