@@ -111,7 +111,7 @@ def _eval_ast_index_depr(node):
         elif isinstance(node, ast.Name) and node.id == "None":
             return None
         elif isinstance(node, ast.Index):
-            return _eval_ast_index(node.value)
+            return _eval_ast_index_depr(node.value)
         else:
             return ast.literal_eval(node)
     else:
