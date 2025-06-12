@@ -96,7 +96,7 @@ def _parse_indices_depr(slice_node):
             return (_eval_ast_index_depr(slice_node),)
     else:
         raise NotImplementedError
-    
+
 
 def _eval_ast_index_depr(node):
     if sys.version_info < (3, 9):
@@ -296,7 +296,7 @@ class Model:
         """
         Link two variables so that they are the same.
 
-        You cannot link intputs to outputs. You can only link inputs to inputs and outputs 
+        You cannot link intputs to outputs. You can only link inputs to inputs and outputs
         to outputs. The outputs are used as constraints within the optimization problem.
         The inputs are the design variables.
 

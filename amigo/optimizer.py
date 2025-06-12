@@ -2,6 +2,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
+
 class Optimizer:
     def __init__(self, model, prob, x_init=None):
         self.model = model
