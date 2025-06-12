@@ -4,6 +4,7 @@ from setuptools import setup, Extension
 from subprocess import check_output
 import glob
 
+
 def get_extensions():
     from pybind11.setup_helpers import Pybind11Extension, build_ext
     import pybind11
@@ -12,14 +13,12 @@ def get_extensions():
 
     inc_dirs.append("include")
     headers = glob.glob("include/*.h")
-    
+
     pybind11_include = pybind11.get_include()
 
     # Construct the A2D path from a guess...
-    a2d_include = os.path.join(os.environ.get("HOME"), "p-gkennedy9-0", "git", "a2d", "include")
-    amigo_include = os.path.join(os.environ.get("HOME"), "p-gkennedy9-0", "git", "amigo", "include")
-
-    print(a2d_include)
+    a2d_include = os.path.join(os.environ.get("HOME"), "git", "a2d", "include")
+    amigo_include = os.path.join(os.environ.get("HOME"), "git", "amigo", "include")
 
     # metis_include = os.path.join(
     #     os.environ.get("HOME"), "git", "tacs", "extern", "metis", "include"
@@ -36,7 +35,6 @@ def get_extensions():
         f.write(f'#define A2D_INCLUDE_PATH "{a2d_include}"\n')
         f.write(f'#define AMIGO_INCLUDE_PATH "{amigo_include}"\n')
         f.write(f"#endif  // AMIGO_INCLUDE_PATHS_H\n")
-
 
     if sys.platform == "darwin":
         from distutils import sysconfig
@@ -59,10 +57,11 @@ def get_extensions():
 
     return ext_modules
 
+
 def get_include_dirs():
     import pybind11
 
-    a2d_include = os.path.join(os.environ.get("HOME"), "p-gkennedy9-0", "git", "a2d", "include")
+    a2d_include = os.path.join(os.environ.get("HOME"), "git", "a2d", "include")
     pybind11_include = pybind11.get_include()
 
     include_dirs = [pybind11_include, a2d_include]
