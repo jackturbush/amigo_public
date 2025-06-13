@@ -4,8 +4,12 @@ import sys
 import importlib
 from .amigo import VectorInt, OptimizationProblem, AMIGO_INCLUDE_PATH, A2D_INCLUDE_PATH
 from .component import Component
-from typing import Self
 from collections import defaultdict
+
+if sys.version_info < (3, 9):
+    Self = object
+else:
+    from typing import Self
 
 
 def _import_class(module_name: str, class_name: str):
