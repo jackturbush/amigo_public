@@ -284,6 +284,7 @@ class VarSet:
                 expr.node.name = name
                 if expr.active == False:
                     self.vars[name].active = False
+                    self.vars[name].var.active = False
         else:
             shape = self.vars[name].shape
             active = False
@@ -298,6 +299,7 @@ class VarSet:
                         active = active or expr[i][j].active
 
             self.vars[name].active = active
+            self.vars[name].var.active = active
 
         return
 
@@ -351,7 +353,7 @@ class VarSet:
                         for j in range(shape[1]):
                             for i in range(shape[0]):
                                 rhs = self.vars[name].expr[i][j].generate_cpp()
-                                lines.append(f"{name}({i})({j}) = {rhs}")
+                                lines.append(f"{name}({i},{j}) = {rhs}")
         else:
             for name in self.vars:
                 if self.vars[name].active:
@@ -625,6 +627,7 @@ class Component:
         self.outputs = OutputSet()
         self.objective = ObjectiveSet()
         self.data = DataSet()
+        self.empty = False
 
     def add_constant(self, name, value, type=float, label="const"):
         self.constants.add(name, value, type=type, label=label)
@@ -651,7 +654,7 @@ class Component:
         return
 
     def is_empty(self):
-        if len(self.objective) == 0 and len(self.outputs) == 0:
+        if (len(self.objective) == 0 and len(self.outputs) == 0) or self.empty:
             return True
         return False
 

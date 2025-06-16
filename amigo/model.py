@@ -272,7 +272,7 @@ class Model:
                 var_shapes[var_name] = (size, var_shapes[var_name])
         return var_shapes
 
-    def add_component(self, name: str, size: int, comp_obj: Union[Component, None]):
+    def add_component(self, name: str, size: int, comp_obj: Component):
         """
         Add a component group to the model.
 
@@ -289,8 +289,10 @@ class Model:
         if name in self.comp:
             raise ValueError(f"Cannot add two components with the same name")
 
-        var_shapes = self._get_group_shapes(size, comp_obj.get_var_shapes())
-        data_shapes = self._get_group_shapes(size, comp_obj.get_data_shapes())
+        vs = comp_obj.get_var_shapes()
+        var_shapes = self._get_group_shapes(size, vs)
+        ds = comp_obj.get_data_shapes()
+        data_shapes = self._get_group_shapes(size, ds)
 
         self.comp[name] = ComponentGroup(
             name,
@@ -341,12 +343,22 @@ class Model:
 
         return
 
+    def _get_slice_indices(self, all, slice, idx):
+        if slice is None and idx is None:
+            return all
+        elif slice is None and idx is not None:
+            return all[idx]
+        elif slice is not None and idx is None:
+            return all[slice]
+        else:
+            return all[slice][idx]
+
     def link(
         self,
         src_expr: str,
         tgt_expr: str,
-        src_idx: Union[None, list, np.ndarray] = None,
-        tgt_idx: Union[None, list, np.ndarray] = None,
+        src_indices: Union[None, list, np.ndarray] = None,
+        tgt_indices: Union[None, list, np.ndarray] = None,
     ):
         """
         Link two inputs, outputs or data components so that they are the same.
@@ -364,12 +376,12 @@ class Model:
         Args:
             src_expr (str): Source variable name
             tgt_expr (str): Target variable name
-            src_idx (list, np.ndarray): Optional source indices
-            tgt_idx (list, np.ndarray): Optional target indices
+            src_indices (list, np.ndarray): Optional source indices
+            tgt_indices (list, np.ndarray): Optional target indices
         """
 
         # Should do some check here to see if the links are valid
-        self.links.append((src_expr, src_idx, tgt_expr, tgt_idx))
+        self.links.append((src_expr, src_indices, tgt_expr, tgt_indices))
         return
 
     def _init_indices(self, links: list, pool: GlobalIndexPool, type: str = "vars"):
@@ -389,17 +401,10 @@ class Model:
                 and self._get_expr_type(b_var) == type
             ):
                 a_all = self.get_indices(a_var)
+                a_indices = self._get_slice_indices(a_all, a_slice, a_idx)
+
                 b_all = self.get_indices(b_var)
-
-                if a_idx is None:
-                    a_indices = a_all[a_slice]
-                else:
-                    a_indices = a_all[a_slice][a_idx]
-
-                if b_idx is None:
-                    b_indices = b_all[b_slice]
-                else:
-                    b_indices = b_all[b_slice][b_idx]
+                b_indices = self._get_slice_indices(b_all, b_slice, b_idx)
 
                 if a_indices.shape != b_indices.shape:
                     raise ValueError(
