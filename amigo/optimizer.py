@@ -54,14 +54,14 @@ class Optimizer:
 
         return jac
 
-    def optimize(self):
+    def optimize(self, max_iters=75):
         x = self.x.get_array()
         if self.x_init is not None:
             x[:] = self.x_init
 
         gnrms = []
 
-        for i in range(500):
+        for i in range(max_iters):
             g = self.gradient()
 
             gnrm = np.linalg.norm(g)

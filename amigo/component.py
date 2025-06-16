@@ -3,6 +3,16 @@ from .expressions import *
 _cpp_type_map = {int: "int", float: "double", complex: "std::complex<double>"}
 
 
+def _normalize_shape(shape):
+    if isinstance(shape, int):
+        shape = (shape,)
+    elif not isinstance(shape, tuple):
+        raise TypeError("Expecting None, int or tuple")
+    if not (len(shape) == 1 or len(shape) == 2):
+        raise ValueError("Amigo only accepts shapes with at most two dimensions")
+    return shape
+
+
 def _generate_cpp_input_decl(
     inputs,
     offset=0,
@@ -25,10 +35,14 @@ def _generate_cpp_input_decl(
             decl = None
             if shape is None:
                 decl = f"{template_name}& {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>& {var_name}"
             else:
-                decl = f"A2D::Vec<{template_name}, {shape}>& {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = f"A2D::Vec<{template_name}, {shape[0]}>& {var_name}"
+                elif len(shape) == 2:
+                    decl = (
+                        f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>& {var_name}"
+                    )
             lines.append(f"{decl} = A2D::get<{index + offset}>({input_name})")
     elif mode == "rev":
         for index, name in enumerate(inputs):
@@ -39,10 +53,14 @@ def _generate_cpp_input_decl(
             decl = None
             if shape is None:
                 decl = f"A2D::ADObj<{template_name}&> {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::ADObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>&> {var_name}"
             else:
-                decl = f"A2D::ADObj<A2D::Vec<{template_name}, {shape}>&> {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = (
+                        f"A2D::ADObj<A2D::Vec<{template_name}, {shape[0]}>&> {var_name}"
+                    )
+                elif len(shape) == 2:
+                    decl = f"A2D::ADObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>&> {var_name}"
             lines.append(
                 f"{decl}(A2D::get<{index + offset}>({input_name}), A2D::get<{index + offset}>({grad_name}))"
             )
@@ -55,10 +73,12 @@ def _generate_cpp_input_decl(
             decl = None
             if shape is None:
                 decl = f"A2D::A2DObj<{template_name}&> {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::A2DObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>&> {var_name}"
             else:
-                decl = f"A2D::A2DObj<A2D::Vec<{template_name}, {shape}>&> {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = f"A2D::A2DObj<A2D::Vec<{template_name}, {shape[0]}>&> {var_name}"
+                elif len(shape) == 2:
+                    decl = f"A2D::A2DObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>&> {var_name}"
             lines.append(
                 f"{decl}(A2D::get<{index + offset}>({input_name}), A2D::get<{index + offset}>({grad_name}), "
                 + f"A2D::get<{index + offset}>({prod_name}), A2D::get<{index + offset}>({hprod_name}))"
@@ -79,10 +99,14 @@ def _generate_cpp_var_decl(inputs, mode="eval", alt_names=None, template_name="T
             decl = None
             if shape is None:
                 decl = f"{template_name} {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}> {var_name}"
             else:
-                decl = f"A2D::Vec<{template_name}, {shape}> {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = f"A2D::Vec<{template_name}, {shape[0]}> {var_name}"
+                elif len(shape) == 2:
+                    decl = (
+                        f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}> {var_name}"
+                    )
             lines.append(decl)
     elif mode == "rev":
         for index, name in enumerate(inputs):
@@ -93,10 +117,14 @@ def _generate_cpp_var_decl(inputs, mode="eval", alt_names=None, template_name="T
             decl = None
             if shape is None:
                 decl = f"A2D::ADObj<{template_name}> {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::ADObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>> {var_name}"
             else:
-                decl = f"A2D::ADObj<A2D::Vec<{template_name}, {shape}>> {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = (
+                        f"A2D::ADObj<A2D::Vec<{template_name}, {shape[0]}>> {var_name}"
+                    )
+                elif len(shape) == 2:
+                    decl = f"A2D::ADObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>> {var_name}"
             lines.append(decl)
     elif mode == "hprod":
         for index, name in enumerate(inputs):
@@ -107,10 +135,14 @@ def _generate_cpp_var_decl(inputs, mode="eval", alt_names=None, template_name="T
             decl = None
             if shape is None:
                 decl = f"A2D::A2DObj<{template_name}> {var_name}"
-            elif isinstance(shape, tuple):
-                decl = f"A2D::A2DObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>> {var_name}"
             else:
-                decl = f"A2D::A2DObj<A2D::Vec<{template_name}, {shape}>> {var_name}"
+                shape = _normalize_shape(shape)
+                if len(shape) == 1:
+                    decl = (
+                        f"A2D::A2DObj<A2D::Vec<{template_name}, {shape[0]}>> {var_name}"
+                    )
+                elif len(shape) == 2:
+                    decl = f"A2D::A2DObj<A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>> {var_name}"
             lines.append(decl)
 
     return lines
@@ -126,10 +158,13 @@ def _generate_cpp_types(inputs, template_name="T__"):
         decl = None
         if shape is None:
             decl = f"{template_name}"
-        elif isinstance(shape, tuple):
-            decl = f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>"
         else:
-            decl = f"A2D::Vec<{template_name}, {shape}>"
+            # Normalize the shape input so it's always a tuple
+            shape = _normalize_shape(shape)
+            if len(shape) == 1:
+                decl = f"A2D::Vec<{template_name}, {shape[0]}>"
+            elif len(shape) == 2:
+                decl = f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>"
         lines.append(decl)
 
     return lines
@@ -151,6 +186,9 @@ class InputSet:
         return
 
     def get_num_inputs(self):
+        return len(self.inputs)
+
+    def __len__(self):
         return len(self.inputs)
 
     def __iter__(self):
@@ -274,6 +312,37 @@ class VarSet:
         return lines
 
 
+class DataSet:
+    def __init__(self):
+        self.data = {}
+        self.labels = {}
+
+    def add(self, name, shape=None, type=float, label=None):
+        self.data[name] = VarNode(name, shape=shape, type=type)
+        self.labels[name] = label
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, name):
+        return self.data[name]
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def generate_cpp_types(self, template_name="T__"):
+        return _generate_cpp_types(self.data, template_name=template_name)
+
+    def generate_cpp_input_decl(self, template_name="T__", data_name="data___"):
+        lines = _generate_cpp_input_decl(
+            self.data, mode="eval", template_name=template_name, input_name=data_name
+        )
+        return lines
+
+    def get_info(self, name):
+        return self.data[name].shape, self.data[name].type, self.labels[name]
+
+
 class OutputSet:
     class OutputExpr:
         def __init__(self, name, type=float, shape=None):
@@ -300,6 +369,9 @@ class OutputSet:
         self.outputs[name] = self.OutputExpr(name, shape=shape, type=type)
         self.labels[name] = label
         return
+
+    def __len__(self):
+        return len(self.outputs)
 
     def __iter__(self):
         return iter(self.outputs)
@@ -465,6 +537,9 @@ class ObjectiveSet:
         self.expr[name] = None
         return
 
+    def __len__(self):
+        return len(self.expr)
+
     def __setitem__(self, name, expr):
         if name not in self.expr:
             raise KeyError(f"{name} not the declared objective")
@@ -487,6 +562,7 @@ class Component:
         self.vars = VarSet()
         self.outputs = OutputSet()
         self.objective = ObjectiveSet()
+        self.data = DataSet()
 
     def add_constant(self, name, value, type=float, label="const"):
         self.constants.add(name, value, type=type, label=label)
@@ -508,6 +584,15 @@ class Component:
         self.objective.add(name, type=type)
         return
 
+    def add_data(self, name, type=float, shape=None):
+        self.data.add(name, type=type, shape=shape)
+        return
+
+    def is_empty(self):
+        if len(self.objective) == 0 and len(self.outputs) == 0:
+            return True
+        return False
+
     def get_var_shapes(self):
         var_shapes = {}
         for name in self.inputs:
@@ -520,24 +605,43 @@ class Component:
 
         return var_shapes
 
-    def _get_input_statement(self, template_name="T__"):
+    def get_data_shapes(self):
+        data_shapes = {}
+        for name in self.data:
+            shape, _, _ = self.data.get_info(name)
+            data_shapes[name] = shape
+
+        return data_shapes
+
+    def _get_using_statement(self, name="input", template_name="T__"):
         # Generate the using statement
-        using = f"using Input = A2D::VarTuple<{template_name}"
+        if name == "input":
+            using = f"using Input = A2D::VarTuple<{template_name}"
 
-        input = self.inputs.generate_cpp_types(template_name=template_name)
-        output = self.outputs.generate_cpp_types(template_name=template_name)
+            input = self.inputs.generate_cpp_types(template_name=template_name)
+            output = self.outputs.generate_cpp_types(template_name=template_name)
 
-        for val in input:
-            using += f", {val}"
-        for val in output:
-            using += f", {val}"
-        using += ">"
+            for val in input:
+                using += f", {val}"
+            for val in output:
+                using += f", {val}"
+            using += ">"
+
+        elif name == "data":
+            using = f"using Data = A2D::VarTuple<{template_name}"
+
+            data = self.data.generate_cpp_types(template_name=template_name)
+
+            for val in data:
+                using += f", {val}"
+            using += ">"
 
         return using
 
     def generate_cpp(
         self,
         template_name="T__",
+        data_name="data__",
         input_name="input__",
         grad_name="boutput__",
         prod_name="pinput__",
@@ -562,30 +666,47 @@ class Component:
             cpp += "  " + line + ";\n"
 
         # Add the input statement
-        using = self._get_input_statement(template_name=template_name)
+        using = self._get_using_statement(name="input", template_name=template_name)
         cpp += "  " + using + ";\n"
         cpp += "  " + "static constexpr int ncomp = Input::ncomp" + ";\n"
+
+        if len(self.data) > 0:
+            using = self._get_using_statement(name="data", template_name=template_name)
+            cpp += "  " + using + ";\n"
+            cpp += "  " + "static constexpr int ndata = Data::ncomp" + ";\n"
+        else:
+            cpp += (
+                "  "
+                + f"using Data = typename A2D::VarTuple<{template_name}, {template_name}>;\n"
+            )
+            cpp += "  " + "static constexpr int ndata = 0;\n"
 
         # Add the contributions for each of the functions
         for mode in ["eval", "rev", "hprod"]:
             if mode == "eval":
                 cpp += (
                     "  "
-                    + f"static {template_name} lagrange(Input& {input_name})"
+                    + f"static {template_name} lagrange(Data& {data_name}, Input& {input_name})"
                     + " {\n"
                 )
             elif mode == "rev":
                 cpp += (
                     "  "
-                    f"static void gradient(Input& {input_name}, Input& {grad_name})"
+                    f"static void gradient(Data& {data_name}, Input& {input_name}, Input& {grad_name})"
                     + " {\n"
                 )
             elif mode == "hprod":
                 cpp += (
                     "  "
-                    f"static void hessian(Input& {input_name}, Input& {prod_name}, "
+                    f"static void hessian(Data& {data_name}, Input& {input_name}, Input& {prod_name}, "
                     f"Input& {grad_name}, Input& {hprod_name})" + " {\n"
                 )
+
+            data_decl = self.data.generate_cpp_input_decl(
+                template_name=template_name, data_name=data_name
+            )
+            for line in data_decl:
+                cpp += "    " + line + ";\n"
 
             in_decl = self.inputs.generate_cpp_input_decl(
                 mode=mode,
@@ -658,6 +779,7 @@ class Component:
         module_class_name = f'"{self.name}"'
 
         cpp = f"py::class_<{cls}, amigo::ComponentGroupBase<double>, std::shared_ptr<{cls}>>"
-        cpp += f"({mod_ident}, {module_class_name}).def(py::init<std::shared_ptr<amigo::Vector<int>>>())"
+        cpp += f"({mod_ident}, {module_class_name}).def("
+        cpp += "py::init<std::shared_ptr<amigo::Vector<int>>, std::shared_ptr<amigo::Vector<int>>>())"
 
         return cpp

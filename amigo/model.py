@@ -9,7 +9,7 @@ from collections import defaultdict
 if sys.version_info < (3, 9):
     Self = object
 else:
-    from typing import Self
+    from typing import Union, Self
 
 
 def _import_class(module_name: str, class_name: str):
@@ -169,23 +169,42 @@ class GlobalIndexPool:
 
 
 class ComponentGroup:
-    def __init__(self, name: str, size: int, comp_obj, var_shapes, index_pool):
+    def __init__(
+        self,
+        name: str,
+        size: int,
+        comp_obj: Component,
+        var_shapes: dict,
+        index_pool: GlobalIndexPool,
+        data_shapes: dict,
+        data_index_pool: GlobalIndexPool,
+    ):
         self.name = name
         self.size = size
         self.comp_obj = comp_obj
         self.class_name = comp_obj.name
+
+        # Set up the variables
         self.vars = {}
         for var_name, shape in var_shapes.items():
             self.vars[var_name] = index_pool.allocate(shape)
 
-    def get_var(self, varname):
+        # Set up the data
+        self.data = {}
+        for data_name, shape in data_shapes.items():
+            self.data[data_name] = data_index_pool.allocate(shape)
+
+    def get_var(self, varname: str):
         return self.vars[varname]
 
-    def create_model(self, module_name: str):
+    def get_data(self, name: str):
+        return self.data[name]
+
+    def _set_indices(self, vars: dict):
         size = 0
         dim = 0
-        for name in self.vars:
-            shape = self.vars[name].shape
+        for name in vars:
+            shape = vars[name].shape
             size += np.prod(shape)
 
             if len(shape) == 1:
@@ -198,23 +217,30 @@ class ComponentGroup:
         array = vec.get_array()
 
         offset = 0
-        for name in self.vars:
-            shape = self.vars[name].shape
+        for name in vars:
+            shape = vars[name].shape
             if len(shape) == 1:
-                array[offset::dim] = self.vars[name][:]
+                array[offset::dim] = vars[name][:]
                 offset += 1
             elif len(shape) == 2:
                 for i in range(shape[1]):
-                    array[offset::dim] = self.vars[name][:, i]
+                    array[offset::dim] = vars[name][:, i]
                     offset += 1
             elif len(shape) == 3:
                 for i in range(shape[1]):
-                    for i in range(shape[2]):
-                        array[offset::dim] = self.vars[name][:, i, j]
+                    for j in range(shape[2]):
+                        array[offset::dim] = vars[name][:, i, j]
                         offset += 1
+        return vec
 
-        # Create the object
-        return _import_class(module_name, self.class_name)(vec)
+    def create_model(self, module_name: str):
+        if not self.comp_obj.is_empty():
+            data_vec = self._set_indices(self.data)
+            vec = self._set_indices(self.vars)
+
+            # Create the object
+            return _import_class(module_name, self.class_name)(data_vec, vec)
+        return None
 
 
 class Model:
@@ -228,10 +254,25 @@ class Model:
         self.module_name = module_name
         self.comp = {}
         self.index_pool = GlobalIndexPool()
+        self.data_index_pool = GlobalIndexPool()
         self.links = []
         self._initialized = False
 
-    def add_component(self, name: str, size: int, comp_obj: Component):
+        self.input_names = {}
+        self.output_names = {}
+        self.data_names = {}
+
+    def _get_group_shapes(self, size: int, var_shapes: dict):
+        for var_name in var_shapes:
+            if var_shapes[var_name] is None:
+                var_shapes[var_name] = (size,)
+            elif isinstance(var_shapes[var_name], tuple):
+                var_shapes[var_name] = (size,) + var_shapes[var_name]
+            else:
+                var_shapes[var_name] = (size, var_shapes[var_name])
+        return var_shapes
+
+    def add_component(self, name: str, size: int, comp_obj: Union[Component, None]):
         """
         Add a component group to the model.
 
@@ -248,18 +289,17 @@ class Model:
         if name in self.comp:
             raise ValueError(f"Cannot add two components with the same name")
 
-        var_shapes = comp_obj.get_var_shapes()
-
-        for var_name in var_shapes:
-            if var_shapes[var_name] is None:
-                var_shapes[var_name] = (size,)
-            elif isinstance(var_shapes[var_name], tuple):
-                var_shapes[var_name] = (size,) + var_shapes[var_name]
-            else:
-                var_shapes[var_name] = (size, var_shapes[var_name])
+        var_shapes = self._get_group_shapes(size, comp_obj.get_var_shapes())
+        data_shapes = self._get_group_shapes(size, comp_obj.get_data_shapes())
 
         self.comp[name] = ComponentGroup(
-            name, size, comp_obj, var_shapes, self.index_pool
+            name,
+            size,
+            comp_obj,
+            var_shapes,
+            self.index_pool,
+            data_shapes,
+            self.data_index_pool,
         )
 
         return
@@ -291,20 +331,31 @@ class Model:
             self.add_component(sub_name, sub_size, sub_obj)
 
         # Add all of the sub-model links (if any exist)
-        for src_expr, tgt_expr in model.links:
-            self.link(name + "." + src_expr, name + "." + tgt_expr)
+        for (
+            src_expr,
+            src_idx,
+            tgt_expr,
+            tgt_idx,
+        ) in model.links:
+            self.link(name + "." + src_expr, src_idx, name + "." + tgt_expr, tgt_idx)
 
         return
 
-    def link(self, src_expr: str, tgt_expr: str):
+    def link(
+        self,
+        src_expr: str,
+        tgt_expr: str,
+        src_idx: Union[None, list, np.ndarray] = None,
+        tgt_idx: Union[None, list, np.ndarray] = None,
+    ):
         """
-        Link two variables so that they are the same.
+        Link two inputs, outputs or data components so that they are the same.
 
         You cannot link intputs to outputs. You can only link inputs to inputs and outputs
-        to outputs. The outputs are used as constraints within the optimization problem.
-        The inputs are the design variables.
+        to outputs and data to data. The outputs are used as constraints within the optimization problem.
+        The inputs are the design variables. The data is constant data for each component.
 
-        The variables are specified as sub_model.group.var[0, 1] or sub_model.group.var[:, 1]
+        The inputs/outputs are specified as sub_model.group.var[0, 1] or sub_model.group.var[:, 1]
         or sub_model.group.var, or any sliced numpy view.
 
         The purpose of the link statements is to enforce which input variables are the same.
@@ -313,42 +364,58 @@ class Model:
         Args:
             src_expr (str): Source variable name
             tgt_expr (str): Target variable name
+            src_idx (list, np.ndarray): Optional source indices
+            tgt_idx (list, np.ndarray): Optional target indices
         """
-        self.links.append((src_expr, tgt_expr))
+
+        # Should do some check here to see if the links are valid
+        self.links.append((src_expr, src_idx, tgt_expr, tgt_idx))
         return
 
-    def initialize(self):
-        """
-        Initialize the variable indices for each component and resolve all links.
-        """
-
+    def _init_indices(self, links: list, pool: GlobalIndexPool, type: str = "vars"):
         # Allocate the AliasTracker
-        tracker = AliasTracker(self.index_pool.counter)
+        tracker = AliasTracker(pool.counter)
 
-        for a_expr, b_expr in self.links:
+        for a_expr, a_idx, b_expr, b_idx in links:
             a_path, a_slice = _parse_var_expr(a_expr)
             a_var = ".".join(a_path)
-            a_indices = self.get_indices(a_var)[a_slice]
 
             b_path, b_slice = _parse_var_expr(b_expr)
             b_var = ".".join(b_path)
-            b_indices = self.get_indices(b_var)[b_slice]
 
-            if a_indices.shape != b_indices.shape:
-                raise ValueError(
-                    f"Incompatible shapes {a_expr} {a_indices.shape} and {b_expr} {b_indices.shape}"
-                )
+            # Make sure that the connection is the right type
+            if (
+                self._get_expr_type(a_var) == type
+                and self._get_expr_type(b_var) == type
+            ):
+                a_all = self.get_indices(a_var)
+                b_all = self.get_indices(b_var)
 
-            for a, b in zip(a_indices.flatten(), b_indices.flatten()):
-                tracker.alias(a, b)
+                if a_idx is None:
+                    a_indices = a_all[a_slice]
+                else:
+                    a_indices = a_all[a_slice][a_idx]
+
+                if b_idx is None:
+                    b_indices = b_all[b_slice]
+                else:
+                    b_indices = b_all[b_slice][b_idx]
+
+                if a_indices.shape != b_indices.shape:
+                    raise ValueError(
+                        f"Incompatible link {a_expr} {a_indices.shape} and {b_expr} {b_indices.shape}"
+                    )
+
+                for a, b in zip(a_indices.flatten(), b_indices.flatten()):
+                    tracker.alias(a, b)
 
         # Set up the variables so that they are contiguous
-        vars = -np.ones(self.index_pool.counter, dtype=int)
+        vars = -np.ones(pool.counter, dtype=int)
 
         # Order the variables
         counter = 0
 
-        # Order any aliased variables
+        # Order the aliased variables first
         groups = tracker.all_groups()
         for group in groups:
             for index in group:
@@ -358,7 +425,12 @@ class Model:
 
         # Order any remaining variables
         for name, comp in self.comp.items():
-            for varname, array in comp.vars.items():
+            if type == "vars":
+                items = comp.vars.items()
+            else:
+                items = comp.data.items()
+
+            for varname, array in items:
                 arr = array.ravel()
 
                 for i in range(arr.shape[0]):
@@ -368,10 +440,34 @@ class Model:
 
                     arr[i] = vars[arr[i]]
 
-        self.num_variables = counter
+        return counter
+
+    def initialize(self):
+        """
+        Initialize the variable indices for each component and resolve all links.
+        """
+
+        self.num_variables = self._init_indices(
+            self.links, self.index_pool, type="vars"
+        )
+        self.data_size = self._init_indices(
+            self.links, self.data_index_pool, type="data"
+        )
         self._initialized = True
 
         return
+
+    def _get_expr_type(self, name: str):
+        path, indices = _parse_var_expr(name)
+        comp_name = ".".join(path[:-1])
+        name = path[-1]
+
+        if name in self.comp[comp_name].vars:
+            return "vars"
+        elif name in self.comp[comp_name].data:
+            return "data"
+        else:
+            raise ValueError("Name is neither a variable or data")
 
     def get_indices(self, name: str):
         """
@@ -387,12 +483,25 @@ class Model:
         """
         path, indices = _parse_var_expr(name)
         comp_name = ".".join(path[:-1])
-        var_name = path[-1]
+        name = path[-1]
 
-        if indices is None:
-            return self.comp[comp_name].get_var(var_name)
+        if comp_name not in self.comp:
+            raise ValueError(f"Component name {comp_name} not found")
+
+        if name in self.comp[comp_name].vars:
+            if indices is None:
+                return self.comp[comp_name].get_var(name)
+            else:
+                return self.comp[comp_name].get_var(name)[indices]
+        elif name in self.comp[comp_name].data:
+            if indices is None:
+                return self.comp[comp_name].get_data(name)
+            else:
+                return self.comp[comp_name].get_data(name)[indices]
         else:
-            return self.comp[comp_name].get_var(var_name)[indices]
+            raise ValueError(
+                f"Name {comp_name}.{name} is not an input, output or data name"
+            )
 
     def create_opt_problem(self):
         """
@@ -407,9 +516,11 @@ class Model:
 
         objs = []
         for name, comp in self.comp.items():
-            objs.append(comp.create_model(self.module_name))
+            obj = comp.create_model(self.module_name)
+            if obj is not None:
+                objs.append(obj)
 
-        return OptimizationProblem(self.num_variables, objs)
+        return OptimizationProblem(self.data_size, self.num_variables, objs)
 
     def generate_cpp(self):
         """
@@ -442,15 +553,16 @@ class Model:
         for name in self.comp:
             class_name = self.comp[name].class_name
             if class_name not in class_names:
-                class_names[class_name] = True
+                if not self.comp[name].comp_obj.is_empty():
+                    class_names[class_name] = True
 
-                # Generate the C++
-                cpp += self.comp[name].comp_obj.generate_cpp()
+                    # Generate the C++
+                    cpp += self.comp[name].comp_obj.generate_cpp()
 
-                py11 += (
-                    self.comp[name].comp_obj.generate_pybind11(mod_ident=mod_ident)
-                    + ";\n"
-                )
+                    py11 += (
+                        self.comp[name].comp_obj.generate_pybind11(mod_ident=mod_ident)
+                        + ";\n"
+                    )
 
         cpp += "}\n"
         py11 += "}\n"

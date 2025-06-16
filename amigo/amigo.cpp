@@ -117,8 +117,10 @@ PYBIND11_MODULE(amigo, mod) {
              std::shared_ptr<amigo::OptimizationProblem<double>>>(
       mod, "OptimizationProblem")
       .def(py::init<
-           int,
+           int, int,
            std::vector<std::shared_ptr<amigo::ComponentGroupBase<double>>>>())
+      .def("get_data_vector",
+           &amigo::OptimizationProblem<double>::get_data_vector)
       .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
       .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
       .def("gradient", &amigo::OptimizationProblem<double>::gradient)

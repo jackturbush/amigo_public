@@ -1,6 +1,5 @@
 import amigo as am
-import numpy as np  # used for plotting/analysis
-import sys
+import numpy as np
 import argparse
 import matplotlib.pylab as plt
 import niceplots
