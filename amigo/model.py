@@ -535,14 +535,26 @@ class Model:
 
         return
 
-    def build_module(self, extra_compile_args=["-std=c++17"]):
+    def build_module(self, extra_compile_args=None):
         """
         Quick setup for building the extension module. Some care is required with this.
         """
         from setuptools import setup, Extension
         import pybind11
+        import sys
         from pybind11.setup_helpers import Pybind11Extension, build_ext
 
+        # Set platform-specific compiler args if not provided
+        if extra_compile_args is None:
+            extra_compile_args = []
+
+        # Append the extra compile args list based on system type (allows for compilaton on Windows vs. Linux/Mac)
+        if sys.platform == "win32":
+            extra_compile_args.append("/std:c++17")
+            extra_compile_args.append("/permissive-")
+        else:
+            extra_compile_args = ["-std=c++17"]
+            
         pybind11_include = pybind11.get_include()
         amigo_include = AMIGO_INCLUDE_PATH
         a2d_include = A2D_INCLUDE_PATH

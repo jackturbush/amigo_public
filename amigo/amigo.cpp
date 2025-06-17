@@ -2,6 +2,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#ifdef _WIN32
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 #include "alias_tracker.h"
 #include "amigo_include_paths.h"
 #include "csr_matrix.h"
