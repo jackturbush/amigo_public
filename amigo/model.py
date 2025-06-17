@@ -11,6 +11,7 @@ from .amigo import (
 )
 from .component import Component
 
+
 if sys.version_info < (3, 9):
     Self = object
 else:
@@ -554,7 +555,7 @@ class Model:
             extra_compile_args.append("/permissive-")
         else:
             extra_compile_args = ["-std=c++17"]
-            
+
         pybind11_include = pybind11.get_include()
         amigo_include = AMIGO_INCLUDE_PATH
         a2d_include = A2D_INCLUDE_PATH
