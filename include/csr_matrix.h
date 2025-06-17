@@ -8,21 +8,39 @@ namespace amigo {
 template <typename T>
 class CSRMat {
  public:
+  /**
+   * @brief Construct a new CSRMat object
+   *
+   * Build a general CSR-based data structure directly from the non-zero
+   * pattern. Since we assume that the rows are sorted for assembly, we sort
+   * them here.
+   *
+   * @param nrows Number of rows
+   * @param ncols Number of columns
+   * @param nnz Number of non-zeros
+   * @param rowp Pointer into the rows of the matrix
+   * @param cols Column indices
+   */
   template <class ArrayType>
   CSRMat(int nrows, int ncols, int nnz, const ArrayType rowp_,
          const ArrayType cols_)
       : nrows(nrows), ncols(ncols), nnz(nnz) {
     rowp = new int[nrows + 1];
     cols = new int[nnz];
-    data = new T[nnz];
-
     std::copy(rowp_, rowp_ + (nrows + 1), rowp);
     std::copy(cols_, cols_ + nnz, cols);
+
+    // Sort the column indices for later use
+    for (int i = 0; i < nrows; i++) {
+      std::sort(&cols[rowp[i]], &cols[rowp[i + 1]]);
+    }
+
+    data = new T[nnz];
     std::fill(data, data + nnz, 0.0);
   }
 
   /**
-   * @brief Construct a new CSRMat object
+   * @brief Construct a new CSRMat object from element -> node connectivity data
    *
    * This constructor assumes that nrows >= ncols.
    *
@@ -34,8 +52,8 @@ class CSRMat {
    * computed.
    *
    * @tparam Functor Class type for the functor
-   * @param nrows Number of block rows
-   * @param ncols Number of block columns
+   * @param nrows Number of rows
+   * @param ncols Number of columns
    * @param nelems Number of elements in the connectivity matrix
    * @param element_nodes Functor returning the number of nodes and node numbers
    */
