@@ -115,6 +115,8 @@ class CSRMat {
           }
         }
       }
+
+      // Sort the column indices for later use
       std::sort(&cols[rowp[i]], &cols[rowp[i + 1]]);
     }
 
@@ -194,14 +196,14 @@ class CSRMat {
   template <class ArrayType>
   void add_row(int row, int nvalues, const int indices[],
                const ArrayType values) {
-    int start = rowp[row];
-    int end = rowp[row + 1];
+    int size = rowp[row + 1] - rowp[row];
+    int* start = &cols[rowp[row]];
+    int* end = start + size;
     for (int i = 0; i < nvalues; i++) {
-      for (int j = start; j < end; j++) {
-        if (cols[j] == indices[i]) {
-          data[j] += values[i];
-          break;
-        }
+      auto* it = std::lower_bound(start, end, indices[i]);
+
+      if (it != end && *it == indices[i]) {
+        data[it - cols] += values[i];
       }
     }
   }
