@@ -40,7 +40,8 @@ class CSRMat {
    * @param element_nodes Functor returning the number of nodes and node numbers
    */
   template <class Functor>
-  CSRMat(int nrows, int ncols, int nelems, const Functor& element_nodes) {
+  CSRMat(int nrows, int ncols, int nelems, const Functor& element_nodes)
+      : nrows(nrows), ncols(ncols) {
     int* node_to_elem_ptr = nullptr;
     int* node_to_elem = nullptr;
     compute_node_to_element_ptr(ncols, nelems, element_nodes, &node_to_elem_ptr,
@@ -114,6 +115,7 @@ class CSRMat {
           }
         }
       }
+      std::sort(&cols[rowp[i]], &cols[rowp[i + 1]]);
     }
 
     // Free unused data

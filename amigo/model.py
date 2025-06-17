@@ -383,7 +383,7 @@ class Model:
 
                 tracker.alias(a_indices.flatten(), b_indices.flatten())
 
-        # Order the aliased variables first
+        # Order the aliased variables first. These are
         counter, vars = tracker.assign_group_vars()
 
         # Order any remaining variables
@@ -394,15 +394,8 @@ class Model:
                 items = comp.data.items()
 
             for varname, array in items:
-                arr = array.ravel()
-
-                # Assign variable indices to any remaining negative values
-                idx = np.where(vars[arr] < 0)
-                length = len(idx)
-                vars[arr[idx]] = np.arange(counter, counter + length)
-                counter += length
-
                 # Set the variable indices
+                arr = array.ravel()
                 arr[:] = vars[arr]
 
         return counter
