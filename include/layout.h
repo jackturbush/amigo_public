@@ -31,9 +31,6 @@ class IndexLayout {
     const int *indx = indices->get_array();
     T *vec_values = vec.get_array();
     for (int i = 0; i < ncomp; i++) {
-#ifdef AMIGO_USE_OPENMP
-#pragma omp atomic
-#endif
       vec_values[indx[ncomp * index + i]] += values[i];
     }
   }

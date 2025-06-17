@@ -221,9 +221,6 @@ class CSRMat {
       auto* it = std::lower_bound(start, end, indices[i]);
 
       if (it != end && *it == indices[i]) {
-#ifdef AMIGO_USE_OPENMP
-#pragma omp atomic
-#endif
         data[it - cols] += values[i];
       }
     }

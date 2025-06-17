@@ -17,6 +17,9 @@ class SerialGroupBackend {
   using Input = typename Component::Input;
   using Data = typename Component::Data;
 
+  SerialGroupBackend(const IndexLayout<ndata> &data_layout,
+		     const IndexLayout<ncomp> &layout) {}
+
   T lagrangian_kernel(const IndexLayout<ndata> &data_layout,
                       const IndexLayout<ncomp> &layout,
                       const Vector<T> &data_vec, const Vector<T> &vec) const {
@@ -103,6 +106,86 @@ class OmpGroupBackend {
   using Input = typename Component::Input;
   using Data = typename Component::Data;
 
+  OmpGroupBackend(const IndexLayout<ndata> &data_layout,
+		  const IndexLayout<ndata> &layout) : 
+	  elem_by_color(layout.get_length()) {
+
+		  int length, ncomps;
+		  const int *array;
+		  layout.get_data(&length, &ncomps, &array);
+    color_elements(length, array);
+  }
+  std::vector<int> color_count;
+  std::vector<int> elems_by_color;
+
+// Input:
+// elem_nodes[e] = list of global node ids for element e
+// Output:
+// elem_color[e] = color assigned to element e
+void color_elements(int nelems, const int *elem_nodes){
+    std::unordered_map<int, std::vector<int>> node_to_elems;
+
+    // Step 1: Build node to element mapping
+    for (int e = 0; e < nelems; ++e) {
+        for (int j = 0; j < ncomp; j++ ) {
+            node_to_elems[node].push_back(e);
+        }
+    }
+
+    // Step 2: Build element adjacency list
+    std::vector<std::unordered_set<int>> elem_neighbors(nelems);
+    for (const auto& [node, elems] : node_to_elems) {
+        for (size_t i = 0; i < elems.size(); ++i) {
+            for (size_t j = 0; j < elems.size(); ++j) {
+                if (i != j){
+                    elem_neighbors[elems[i]].insert(elems[j]);
+            	}
+	    }
+        }
+    }
+
+    // Step 3: Greedy coloring
+    std::vector<int> elem_color(nelems, -1);
+    int max_color = 0;
+
+    for (int e = 0; e < nelems; ++e) {
+        std::unordered_set<int> neighbor_colors;
+        for (int neigh : elem_neighbors[e]) {
+            int c = elem_color[neigh];
+            if (c != -1){
+                neighbor_colors.insert(c);
+            }
+	}
+
+        // Find smallest non-conflicting color
+        int color = 0;
+        while (neighbor_colors.count(color)){
+            ++color;
+	}
+
+        elem_color[e] = color;
+        max_color = std::max(max_color, color);
+    }
+
+    // Now elem_color contains the element colours
+    std::vector<int> ptr(max_color + 1, 0);
+    color_count.resize(max_color, 0);
+
+    for (int e = 0; e < nelems; e++ ){
+	    color_count[e]++;
+    }
+
+    for (int i = 0; i < max_color; i++ ){
+	    ptr[i+1] = ptr[i] + color_count[i];
+    }
+
+    for (int e = 0; e < nelems; e++ ){
+	    elem_by_color[ptr[elem_color[e]]] = e;
+	    ptr[elem_color[e]]++;
+    }
+  }
+
+
   T lagrangian_kernel(const IndexLayout<ndata> &data_layout,
                       const IndexLayout<ncomp> &layout,
                       const Vector<T> &data_vec, const Vector<T> &vec) const {
@@ -127,13 +210,17 @@ class OmpGroupBackend {
     Data data;
     Input input, gradient;
 
+    for (int i = 0, j = 0; j < num_colors; j++ ){
+      int end = i + colour_count[i];
 #pragma omp parallel for
-    for (int i = 0; i < layout.get_length(); i++) {
-      data_layout.get_values(i, data_vec, data);
-      gradient.zero();
-      layout.get_values(i, vec, input);
-      Component::gradient(data, input, gradient);
-      layout.add_values(i, gradient, res);
+      for (; i < end; i++) {
+	int elem = elems_by_color[i];
+        data_layout.get_values(elem, data_vec, data);
+        gradient.zero();
+        layout.get_values(elem, vec, input);
+        Component::gradient(data, input, gradient);
+        layout.add_values(elem, gradient, res);
+      }
     }
   }
 
@@ -209,7 +296,7 @@ class ComponentGroup : public ComponentGroupBase<T> {
 
   ComponentGroup(std::shared_ptr<Vector<int>> data_indices,
                  std::shared_ptr<Vector<int>> indices)
-      : data_layout(data_indices), layout(indices) {}
+      : data_layout(data_indices), layout(indices), backend(data_layout, layout) {}
 
   T lagrangian(const Vector<T> &data_vec, const Vector<T> &vec) const {
     return backend.lagrangian_kernel(data_layout, layout, data_vec, vec);

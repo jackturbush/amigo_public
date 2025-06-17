@@ -300,6 +300,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--build", dest="build", action="store_true", default=False, help="Enable building"
 )
+parser.add_argument(
+    "--with-openmp",
+    dest="use_openmp",
+    action="store_true",
+    default=False,
+    help="Enable OpenMP",
+)
 args = parser.parse_args()
 
 nx = 2 * 256
@@ -383,9 +390,17 @@ for n in range(4):
 
 if args.build:
     model.generate_cpp()
-    define_macros = [("AMIGO_USE_OPENMP", "1")]
+
+    compile_args = []
+    link_args = []
+    define_macros = []
+    if args.use_openmp:
+        compile_args = ["-fopenmp"]
+        link_args = ["-fopenmp"]
+        define_macros = [("AMIGO_USE_OPENMP", "1")]
+
     model.build_module(
-        compile_args=["-fopenmp"], link_args=["-fopenmp"], define_macros=define_macros
+        compile_args=compile_args, link_args=link_args, define_macros=define_macros
     )
 
 start = time.perf_counter()
@@ -410,3 +425,10 @@ start = time.perf_counter()
 prob.hessian(x, mat_obj)
 end = time.perf_counter()
 print(f"Matrix computation time:    {end - start:.6f} seconds")
+
+grad = prob.create_vector()
+start = time.perf_counter()
+for i in range(10):
+    prob.gradient(x, grad)
+end = time.perf_counter()
+print(f"Residual computation time:  {end - start:.6f} seconds")
