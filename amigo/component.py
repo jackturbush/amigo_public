@@ -756,22 +756,23 @@ class Component:
 
         # Add the contributions for each of the functions
         for mode in ["eval", "rev", "hprod"]:
+            pre = "AMIGO_HOST_DEVICE static"
             if mode == "eval":
                 cpp += (
                     "  "
-                    + f"static {template_name} lagrange(Data& {data_name}, Input& {input_name})"
+                    + f"{pre} {template_name} lagrange(Data& {data_name}, Input& {input_name})"
                     + " {\n"
                 )
             elif mode == "rev":
                 cpp += (
                     "  "
-                    f"static void gradient(Data& {data_name}, Input& {input_name}, Input& {grad_name})"
+                    f"{pre} void gradient(Data& {data_name}, Input& {input_name}, Input& {grad_name})"
                     + " {\n"
                 )
             elif mode == "hprod":
                 cpp += (
                     "  "
-                    f"static void hessian(Data& {data_name}, Input& {input_name}, Input& {prod_name}, "
+                    f"{pre} void hessian(Data& {data_name}, Input& {input_name}, Input& {prod_name}, "
                     f"Input& {grad_name}, Input& {hprod_name})" + " {\n"
                 )
 

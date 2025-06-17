@@ -14,6 +14,7 @@ from .component import Component
 
 if sys.version_info < (3, 9):
     Self = object
+    from typing import Union
 else:
     from typing import Union, Self
 
