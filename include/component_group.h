@@ -111,7 +111,7 @@ class OmpGroupBackend {
     T value = 0.0;
     int length = layout.get_length();
 
-#pragma omp parallel for reduction(+value)
+#pragma omp parallel for reduction(+:value)
     for (int i = 0; i < length; i++) {
       data_layout.get_values(i, data_vec, data);
       layout.get_values(i, vec, input);

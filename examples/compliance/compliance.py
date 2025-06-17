@@ -383,7 +383,10 @@ for n in range(4):
 
 if args.build:
     model.generate_cpp()
-    model.build_module()
+    define_macros = [("AMIGO_USE_OPENMP", "1")]
+    model.build_module(
+        compile_args=["-fopenmp"], link_args=["-fopenmp"], define_macros=define_macros
+    )
 
 start = time.perf_counter()
 model.initialize()
