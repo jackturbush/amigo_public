@@ -203,8 +203,8 @@ class OmpGroupBackend {
           int e = node_to_elem[k];
 
           if (e != i && elem_flags[e] != i) {
-	    elem_to_elem[elem_to_elem_ptr[i] + count] = e;
-	    count++;
+            elem_to_elem[elem_to_elem_ptr[i] + count] = e;
+            count++;
             elem_flags[e] = i;
           }
         }
@@ -268,7 +268,7 @@ class OmpGroupBackend {
     }
 
     // Set up the elements by color
-    elem_by_color = new int[ nelems ];
+    elem_by_color = new int[nelems];
     elem_by_color_ptr = new int[num_colors + 1];
     std::fill(elem_by_color_ptr, elem_by_color_ptr + num_colors + 1, 0);
     for (int e = 0; e < nelems; e++) {
