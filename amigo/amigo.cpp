@@ -11,6 +11,7 @@ typedef SSIZE_T ssize_t;
 #include "amigo_include_paths.h"
 #include "csr_matrix.h"
 #include "optimization_problem.h"
+#include "quasidef_cholesky.h"
 
 namespace py = pybind11;
 
@@ -190,11 +191,14 @@ PYBIND11_MODULE(amigo, mod) {
              std::memcpy(cols.mutable_data(), mat.cols, mat.nnz * sizeof(int));
              return py::make_tuple(mat.nrows, mat.ncols, mat.nnz, rowp, cols);
            })
-      .def("get_data", [](amigo::CSRMat<double> &mat) -> py::array_t<double> {
-        py::array_t<double> data(mat.nnz);
-        std::memcpy(data.mutable_data(), mat.data, mat.nnz * sizeof(double));
-        return data;
-      });
+      .def("get_data",
+           [](amigo::CSRMat<double> &mat) -> py::array_t<double> {
+             py::array_t<double> data(mat.nnz);
+             std::memcpy(data.mutable_data(), mat.data,
+                         mat.nnz * sizeof(double));
+             return data;
+           })
+      .def("mult", &amigo::CSRMat<double>::mult);
 
   bind_vector<int>(mod, "VectorInt");
   bind_vector<double>(mod, "Vector");
@@ -229,4 +233,11 @@ PYBIND11_MODULE(amigo, mod) {
         int counter = tracker.assign_group_vars(array.mutable_data());
         return py::make_tuple(counter, array);
       });
+
+  py::class_<amigo::QuasidefCholesky<double>,
+             std::shared_ptr<amigo::QuasidefCholesky<double>>>(
+      mod, "QuasidefCholesky")
+      .def(py::init<std::shared_ptr<amigo::CSRMat<double>>>())
+      .def("factor", &amigo::QuasidefCholesky<double>::factor)
+      .def("solve", &amigo::QuasidefCholesky<double>::solve);
 }
