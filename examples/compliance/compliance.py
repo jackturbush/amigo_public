@@ -306,9 +306,10 @@ class AppliedLoad(am.Component):
     def compute(self):
         fx = self.constants["fx"]
         fy = self.constants["fy"]
-        self.outputs["u_res"] = -fx   
-        self.outputs["v_res"] = -fy    
+        self.outputs["u_res"] = -fx
+        self.outputs["v_res"] = -fy
         return
+
 
 class NodeSource(am.Component):
     def __init__(self):
