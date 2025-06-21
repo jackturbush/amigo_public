@@ -168,8 +168,14 @@ class ComponentGroup:
         for data_name, shape in data_shapes.items():
             self.data[data_name] = data_index_pool.allocate(shape)
 
+    def get_input_names(self):
+        return self.comp_obj.get_input_names()
+
     def get_output_names(self):
         return self.comp_obj.get_output_names()
+
+    def get_data_names(self):
+        return self.comp_obj.get_data_names()
 
     def get_var(self, varname: str):
         return self.vars[varname]
@@ -373,7 +379,6 @@ class Model:
         links: list,
         pool: GlobalIndexPool,
         type: str = "vars",
-        reorder: bool = False,
     ):
         # Allocate the AliasTracker
         tracker = AliasTracker(pool.counter)
@@ -386,10 +391,14 @@ class Model:
             b_var = ".".join(b_path)
 
             # Make sure that the connection is the right type
-            if (
-                self._get_expr_type(a_var) == type
-                and self._get_expr_type(b_var) == type
-            ):
+            a_type = self._get_expr_type(a_var)
+            b_type = self._get_expr_type(b_var)
+
+            # Check if the types are consistent
+            is_var = a_type == b_type and (a_type == "input" or b_type == "output")
+            is_data = a_type == b_type and a_type == "data"
+
+            if (type == "vars" and is_var) or (type == "data" and is_data):
                 a_all = self.get_indices(a_var)
                 a_indices = self._get_slice_indices(a_all, a_slice, a_idx)
 
@@ -404,11 +413,14 @@ class Model:
                 elif b_indices.size == 1:
                     b_temp = b_indices * np.ones(a_indices.shape, dtype=int)
                     tracker.alias(a_indices.flatten(), b_temp.flatten())
-                else:  
+                else:
                     raise ValueError(
                         f"Incompatible link {a_expr} {a_indices.shape} and {b_expr} {b_indices.shape}"
                     )
-
+            elif (not is_var) and (not is_data):
+                raise ValueError(
+                    f"Cannot link {type} for {a_expr} {a_type} and {b_expr} {b_type}"
+                )
 
         # Order the aliased variables first. These are
         counter, vars = tracker.assign_group_vars()
@@ -486,12 +498,16 @@ class Model:
         comp_name = ".".join(path[:-1])
         name = path[-1]
 
-        if name in self.comp[comp_name].vars:
-            return "vars"
-        elif name in self.comp[comp_name].data:
+        if name in self.comp[comp_name].get_input_names():
+            return "input"
+        elif name in self.comp[comp_name].get_output_names():
+            return "output"
+        elif name in self.comp[comp_name].get_data_names():
             return "data"
         else:
-            raise ValueError(f"Name {comp_name}.{name} is neither a variable or data")
+            raise ValueError(
+                f"Name {comp_name}.{name} is neither an input, output or data"
+            )
 
     def get_indices(self, name: str):
         """

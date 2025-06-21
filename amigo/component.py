@@ -175,7 +175,7 @@ class VarMeta:
         self.name = name
         self.shape = kwargs.pop("shape", (1))
         self.value = kwargs.pop("value", 0.0)
-        self.type  = kwargs.pop("type", float)
+        self.type = kwargs.pop("type", float)
         self.lower = kwargs.pop("lower", float("-inf"))
         self.upper = kwargs.pop("upper", float("inf"))
         self.label = kwargs.pop("label", None)
@@ -203,9 +203,12 @@ class VarMeta:
             raise ValueError("value must be within [lower, upper]")
 
     def __repr__(self):
-        return (f"Parameter(value={self.value}, type={self.type.__name__}, "
-                f"lower={self.lower}, upper={self.upper}, label={self.label}, "
-                f"units={self.units}, scale={self.scale})")
+        return (
+            f"Parameter(value={self.value}, type={self.type.__name__}, "
+            f"lower={self.lower}, upper={self.upper}, label={self.label}, "
+            f"units={self.units}, scale={self.scale})"
+        )
+
 
 class InputSet:
     """
@@ -590,9 +593,7 @@ class OutputSet:
                 for i in range(shape[0]):
                     for j in range(shape[1]):
                         res_name = res_names[name][i][j]
-                        expr_list.append(
-                            f"({res_name}) * {mult_names[name]}({i}, {j})"
-                        )
+                        expr_list.append(f"({res_name}) * {mult_names[name]}({i}, {j})")
 
         if obj_expr is None:
             expr = ""
@@ -609,9 +610,9 @@ class OutputSet:
         lines = []
 
         if mode == "eval":
-            make_line = lambda name, rhs : f"{name} = {rhs}"
+            make_line = lambda name, rhs: f"{name} = {rhs}"
         else:
-            make_line = lambda name, rhs : f"A2D::Eval({rhs}, {name})"
+            make_line = lambda name, rhs: f"A2D::Eval({rhs}, {name})"
 
         res_names = {}
         for item in self.outputs:
@@ -725,7 +726,9 @@ class Component:
         self.constants.add(name, value=value, **kwargs)
         return
 
-    def add_input(self, name, shape=None, lower=float("-inf"), upper=float("inf"), **kwargs):
+    def add_input(
+        self, name, shape=None, lower=float("-inf"), upper=float("inf"), **kwargs
+    ):
         """
         Add inputs to the component. Note that inputs by default have no lower or upper bounds.
         """
@@ -764,11 +767,23 @@ class Component:
         self.objective.clear()
         return
 
+    def get_input_names(self):
+        inputs = []
+        for name in self.inputs:
+            inputs.append(name)
+        return inputs
+
     def get_output_names(self):
         outputs = []
         for name in self.outputs:
             outputs.append(name)
         return outputs
+
+    def get_data_names(self):
+        data = []
+        for name in self.data:
+            data.append(name)
+        return data
 
     def get_var_shapes(self):
         var_shapes = {}
