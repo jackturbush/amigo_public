@@ -84,11 +84,11 @@ class Helmholtz(am.Component):
         self.add_data("y_coord", shape=(4,))
 
         # The implicit topology input/output
-        self.add_input("x", shape=(4,))
-        self.add_input("rho", shape=(4,))
+        self.add_input("x", shape=(4,), value=0.5, lower=0.0, upper=1.0)
+        self.add_input("rho", shape=(4,), value=0.5, lower=0.0, upper=1.0)
 
         # Add the residual
-        self.add_output("rho_res", shape=(4,))
+        self.add_output("rho_res", shape=(4,), value=1.0, lower=0.0, upper=0.0)
 
         return
 
@@ -152,13 +152,13 @@ class Topology(am.Component):
         self.add_data("y_coord", shape=(4,))
 
         # The inputs to the problem
-        self.add_input("rho", shape=(4,))
-        self.add_input("u", shape=(4,))
-        self.add_input("v", shape=(4,))
+        self.add_input("rho", shape=(4,), value=0.5, lower=0.0, upper=1.0)
+        self.add_input("u", shape=(4,), value=0.0)
+        self.add_input("v", shape=(4,), value=0.0)
 
         # Add the residuals
-        self.add_output("u_res", shape=(4,))
-        self.add_output("v_res", shape=(4,))
+        self.add_output("u_res", shape=(4,), value=1.0, lower=0.0, upper=0.0)
+        self.add_output("v_res", shape=(4,), value=1.0, lower=0.0, upper=0.0)
 
         # Add the objective
         self.add_objective("compliance")
@@ -250,10 +250,10 @@ class MassConstraint(am.Component):
         self.add_data("y_coord", shape=(4,))
 
         # The implicit topology input/output
-        self.add_input("rho", shape=(4,))
+        self.add_input("rho", shape=(4,), value=0.5, lower=0.0, upper=1.0)
 
         # Add the residuals
-        self.add_output("mass_con")
+        self.add_output("mass_con", value=1.0, lower=0.0, upper=0.0)
 
     def compute(self, n=None):
         qpts = [-1.0 / np.sqrt(3.0), 1.0 / np.sqrt(3.0)]
@@ -283,10 +283,10 @@ class FixedBoundaryCondition(am.Component):
     def __init__(self):
         super().__init__()
 
-        self.add_input("u")
-        self.add_input("v")
-        self.add_output("u_res")
-        self.add_output("v_res")
+        self.add_input("u", value=1.0)
+        self.add_input("v", value=1.0)
+        self.add_output("u_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_output("v_res", value=1.0, lower=0.0, upper=0.0)
 
     def compute(self):
         self.outputs["u_res"] = self.inputs["u"]
@@ -297,8 +297,8 @@ class AppliedLoad(am.Component):
     def __init__(self):
         super().__init__()
 
-        self.add_output("u_res")
-        self.add_output("v_res")
+        self.add_output("u_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_output("v_res", value=1.0, lower=0.0, upper=0.0)
         self.add_constant("fx", value=-10.0)
         self.add_constant("fy", value=-10.0)
         return
@@ -316,14 +316,14 @@ class NodeSource(am.Component):
         super().__init__()
 
         # Filter input values
-        self.add_input("x")
-        self.add_input("rho")
-        self.add_input("u")
-        self.add_input("v")
+        self.add_input("x", value=0.5, lower=0.0, upper=1.0)
+        self.add_input("rho", value=0.5, lower=0.0, upper=1.0)
+        self.add_input("u", value=0.0)
+        self.add_input("v", value=0.0)
 
-        self.add_output("rho_res")
-        self.add_output("u_res")
-        self.add_output("v_res")
+        self.add_output("rho_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_output("u_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_output("v_res", value=1.0, lower=0.0, upper=0.0)
 
         self.add_data("x_coord")
         self.add_data("y_coord")
@@ -532,21 +532,6 @@ if args.show_sparsity:
     plt.spy(jac, markersize=0.2)
     plt.title("Sparsity pattern of matrix A")
     plt.show()
-
-# for i in range(20):
-#     # Compute the gradient and form the Hessian
-#     prob.gradient(x, grad)
-#     prob.hessian(x, mat_obj)
-
-#     nrows, ncols, nnz, rowp, cols = mat_obj.get_nonzero_structure()
-#     data = mat_obj.get_data()
-#     jac = csr_matrix((data, cols, rowp), shape=(nrows, ncols))
-
-#     p = spsolve(jac, grad.get_array())
-
-#     # Compute the update
-#     x.get_array()[:] -= 0.25 * p
-
 
 X, Y = np.meshgrid(xpts, ypts)
 vals = x.get_array()[model.get_indices("src.rho")]

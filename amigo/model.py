@@ -16,9 +16,9 @@ from .component import Component
 
 if sys.version_info < (3, 9):
     Self = object
-    from typing import Union
+    from typing import Union, List
 else:
-    from typing import Union, Self
+    from typing import Union, Self, List
 
 
 def _import_class(module_name: str, class_name: str):
@@ -182,6 +182,22 @@ class ComponentGroup:
 
     def get_data(self, name: str):
         return self.data[name]
+
+    def get_meta(self, name):
+        if name in self.comp_obj.inputs:
+            return self.comp_obj.inputs.get_meta(name)
+        elif name in self.comp_obj.outputs:
+            return self.comp_obj.outputs.get_meta(name)
+        elif name in self.comp_obj.data:
+            return self.comp_obj.data.get_meta(name)
+        elif name in self.comp_obj.objective:
+            return self.comp_obj.objective.get_meta(name)
+        elif name in self.comp_obj.constants:
+            return self.comp_obj.constants.get_meta(name)
+        else:
+            raise ValueError(
+                f"No input, output, data, objective or constant for {self.class_name}.{name}"
+            )
 
     def get_indices(self, vars: dict):
         size = 0
@@ -543,6 +559,19 @@ class Model:
                 f"Name {comp_name}.{name} is not an input, output or data name"
             )
 
+    def get_meta(self, name: str):
+        """
+        Get meta data for the associated input, output, data, objective or constraint name
+        """
+        path, _ = _parse_var_expr(name)  # Ignore the indices here
+        comp_name = ".".join(path[:-1])
+        name = path[-1]
+
+        if comp_name not in self.comp:
+            raise ValueError(f"Component name {comp_name} not found")
+
+        return self.comp[comp_name].get_meta(name)
+
     def create_opt_problem(self):
         """
         Create the optimization problem object that is used to evaluate the gradient and
@@ -567,6 +596,38 @@ class Model:
             self.order_for_block,
             objs,
         )
+
+    def get_values_from_meta(self, meta_name: str):
+        """
+        Set values into the provided list or array.
+
+        Note that this does not guarantee that the meta data is consistent between components.
+        The last component added will overwrite whatever is set by other components without
+        checking the consistency of the values.
+
+        Args:
+            meta_name (str) : The name of the meta data to place into the array
+
+        Returns:
+            x (np.ndarray) : The meta values assigned to each component
+        """
+
+        if not self._initialized:
+            raise RuntimeError(
+                "Must call initialize before calling get_values_from_meta"
+            )
+
+        x = np.zeros(self.num_variables)
+        for comp_name, comp in self.comp.items():
+            for var_name in comp.vars:
+                name = comp_name + "." + var_name
+                meta = self.get_meta(name)
+                value = meta[meta_name]
+                if value is None:
+                    value = 0.0
+                x[self.get_indices(name)] = value
+
+        return x
 
     def generate_cpp(self):
         """

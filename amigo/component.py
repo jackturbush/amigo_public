@@ -170,18 +170,24 @@ def _generate_cpp_types(inputs, template_name="T__"):
     return lines
 
 
-class VarMeta:
-    def __init__(self, name, **kwargs):
+class Meta:
+    def __init__(self, name, var_type, **kwargs):
         self.name = name
+        options = ["input", "output", "data", "objective", "constant"]
+        if var_type not in options:
+            raise ValueError(f"{var_type} not one of {options}")
+        self.var_type = var_type
         self.shape = kwargs.pop("shape", (1))
         self.value = kwargs.pop("value", 0.0)
         self.type = kwargs.pop("type", float)
         self.lower = kwargs.pop("lower", float("-inf"))
         self.upper = kwargs.pop("upper", float("inf"))
-        self.label = kwargs.pop("label", None)
         self.units = kwargs.pop("units", None)
         self.scale = kwargs.pop("scale", 1.0)
         self.label = kwargs.pop("label", None)
+
+        if self.value is None:
+            self.value = 0.0
 
         if len(kwargs) > 0:
             raise ValueError(f"Unknown options: {kwargs}")
@@ -199,14 +205,35 @@ class VarMeta:
             raise TypeError("upper must be a number")
         if self.lower > self.upper:
             raise ValueError("lower bound cannot be greater than upper bound")
-        if not self.lower <= self.value <= self.upper:
+        if self.var_type == "input" and not self.lower <= self.value <= self.upper:
             raise ValueError("value must be within [lower, upper]")
+
+    def __getitem__(self, name):
+        if name == "name":
+            return self.name
+        elif name == "shape":
+            return self.shape
+        elif name == "value":
+            return self.value
+        elif name == "type":
+            return self.type
+        elif name == "lower":
+            return self.lower
+        elif name == "upper":
+            return self.upper
+        elif name == "units":
+            return self.units
+        elif name == "scale":
+            return self.scale
+        elif name == "label":
+            return self.label
 
     def __repr__(self):
         return (
-            f"Parameter(value={self.value}, type={self.type.__name__}, "
-            f"lower={self.lower}, upper={self.upper}, label={self.label}, "
-            f"units={self.units}, scale={self.scale})"
+            f"Meta(name={self.name!r}, var_type={self.var_type!r}, shape={self.shape},\n"
+            f"     value={self.value}, type={self.type.__name__},\n"
+            f"     lower={self.lower}, upper={self.upper}, units={self.units!r},\n"
+            f"     scale={self.scale}, label={self.label!r})"
         )
 
 
@@ -221,7 +248,7 @@ class InputSet:
 
     def add(self, name, shape=None, **kwargs):
         self.inputs[name] = VarNode(name, shape=shape, active=True)
-        self.meta[name] = VarMeta(name=name, shape=shape, **kwargs)
+        self.meta[name] = Meta(name, "input", shape=shape, **kwargs)
         return
 
     def get_num_inputs(self):
@@ -240,6 +267,9 @@ class InputSet:
 
     def get_shape(self, name):
         return self.inputs[name].shape
+
+    def get_meta(self, name):
+        return self.meta[name]
 
     def generate_cpp_types(self, template_name="T__"):
         return _generate_cpp_types(self.inputs, template_name=template_name)
@@ -275,7 +305,9 @@ class ConstantSet:
         if "shape" in kwargs and kwargs["shape"] != None:
             raise ValueError("Constants must be scalars")
         self.inputs[name] = ConstNode(name=name, value=value, type=type)
-        self.meta[name] = VarMeta(name, value=value, shape=None, type=type, **kwargs)
+        self.meta[name] = Meta(
+            name, "constant", value=value, shape=None, type=type, **kwargs
+        )
         return
 
     def __iter__(self):
@@ -288,6 +320,9 @@ class ConstantSet:
 
     def get_shape(self, name):
         return self.inputs[name].shape
+
+    def get_meta(self, name):
+        return self.meta[name]
 
     def generate_cpp_const_decl(self):
         lines = []
@@ -435,7 +470,7 @@ class DataSet:
 
     def add(self, name, shape=None, type=float, **kwargs):
         self.data[name] = VarNode(name, shape=shape, type=type, active=False)
-        self.meta[name] = VarMeta(name, shape=shape, type=type, **kwargs)
+        self.meta[name] = Meta(name, "data", shape=shape, type=type, **kwargs)
 
     def __len__(self):
         return len(self.data)
@@ -457,6 +492,9 @@ class DataSet:
 
     def get_shape(self, name):
         return self.data[name].shape
+
+    def get_meta(self, name):
+        return self.meta[name]
 
 
 class OutputSet:
@@ -486,7 +524,7 @@ class OutputSet:
 
     def add(self, name, shape=None, type=float, **kwargs):
         self.outputs[name] = self.OutputExpr(name, shape=shape, type=type)
-        self.meta[name] = VarMeta(name, shape=shape, type=type, **kwargs)
+        self.meta[name] = Meta(name, "output", shape=shape, type=type, **kwargs)
         return
 
     def clear(self):
@@ -524,6 +562,9 @@ class OutputSet:
 
     def get_shape(self, name):
         return self.outputs[name].shape
+
+    def get_meta(self, name):
+        return self.meta[name]
 
     def evaluate(self, name, env):
         return self.outputs[name].node.evaluate(env)
@@ -665,7 +706,7 @@ class ObjectiveSet:
         if "scale" in kwargs:
             raise ValueError("Objective function cannot be scaled through kwargs")
         self.expr[name] = None
-        self.meta[name] = VarMeta(name, shape=shape, type=type, **kwargs)
+        self.meta[name] = Meta(name, "objective", shape=shape, type=type, **kwargs)
         return
 
     def __len__(self):
@@ -686,6 +727,9 @@ class ObjectiveSet:
             rhs = self.expr[name].generate_cpp()
             return rhs
         return None
+
+    def get_meta(self, name):
+        return self.meta[name]
 
 
 class Component:
