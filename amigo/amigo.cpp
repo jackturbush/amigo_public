@@ -11,6 +11,7 @@ typedef SSIZE_T ssize_t;
 #include "amigo_include_paths.h"
 #include "csr_matrix.h"
 #include "optimization_problem.h"
+#include "optimizer.h"
 #include "quasidef_cholesky.h"
 
 namespace py = pybind11;
@@ -274,4 +275,45 @@ PYBIND11_MODULE(amigo, mod) {
                     std::shared_ptr<amigo::CSRMat<double>>>())
       .def("factor", &amigo::QuasidefCholesky<double>::factor)
       .def("solve", &amigo::QuasidefCholesky<double>::solve);
+
+  py::class_<amigo::OptVector<double>,
+             std::shared_ptr<amigo::OptVector<double>>>(mod, "OptVector");
+
+  py::class_<amigo::InteriorPointOptimizer<double>,
+             std::shared_ptr<amigo::InteriorPointOptimizer<double>>>(
+      mod, "InteriorPointOptimizer")
+      .def(py::init<std::shared_ptr<amigo::OptimizationProblem<double>>,
+                    std::shared_ptr<amigo::Vector<double>>,
+                    std::shared_ptr<amigo::Vector<double>>>())
+      .def(
+          "create_opt_vector",
+          [](const amigo::InteriorPointOptimizer<double> &self,
+             py::object x = py::none()) {
+            if (!x.is_none()) {
+              return self.create_opt_vector(
+                  x.cast<std::shared_ptr<amigo::Vector<double>>>());
+            }
+            return self.create_opt_vector();
+          },
+          py::arg("x") = py::none())
+      .def("make_vars_consistent",
+           &amigo::InteriorPointOptimizer<double>::make_vars_consistent)
+      .def("compute_residual",
+           &amigo::InteriorPointOptimizer<double>::compute_residual)
+      .def("compute_reduced_residual",
+           &amigo::InteriorPointOptimizer<double>::compute_reduced_residual)
+      .def("compute_update_from_reduced",
+           &amigo::InteriorPointOptimizer<double>::compute_update_from_reduced)
+      .def("add_diagonal", &amigo::InteriorPointOptimizer<double>::add_diagonal)
+      .def("compute_max_step",
+           [](const amigo::InteriorPointOptimizer<double> &self,
+              const double tau,
+              const std::shared_ptr<amigo::OptVector<double>> vars,
+              const std::shared_ptr<amigo::OptVector<double>> update) {
+             double alpha_x, alpha_z;
+             self.compute_max_step(tau, vars, update, alpha_x, alpha_z);
+             return py::make_tuple(alpha_x, alpha_z);
+           })
+      .def("apply_step_update",
+           &amigo::InteriorPointOptimizer<double>::apply_step_update);
 }

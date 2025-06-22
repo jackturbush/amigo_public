@@ -32,7 +32,7 @@ class OptVector {
     Vector<T>& x_ = *x;
     Vector<T>& xs_ = *xs;
     int num_variables = problem->get_num_variables();
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
     for (int i = 0; i < num_variables; i++) {
       if (!is_multiplier[i]) {
         xs_[i] = x_[i];
@@ -141,10 +141,11 @@ class OptVector {
  * @tparam T Numerical type for the computations
  */
 template <typename T>
-class Optimizer {
+class InteriorPointOptimizer {
  public:
-  Optimizer(std::shared_ptr<OptimizationProblem<T>> problem,
-            std::shared_ptr<Vector<T>> lower, std::shared_ptr<Vector<T>> upper)
+  InteriorPointOptimizer(std::shared_ptr<OptimizationProblem<T>> problem,
+                         std::shared_ptr<Vector<T>> lower,
+                         std::shared_ptr<Vector<T>> upper)
       : problem(problem), lower(lower), upper(upper) {
     diagonal = problem->create_vector();
     num_variables = problem->get_num_variables();
@@ -155,7 +156,7 @@ class Optimizer {
    *
    * @return std::shared_ptr<OptVector<T>>
    */
-  std::shared_ptr<OptVector<T>> create_opt_vector() {
+  std::shared_ptr<OptVector<T>> create_opt_vector() const {
     return std::make_shared<OptVector<T>>(problem);
   }
 
@@ -166,7 +167,7 @@ class Optimizer {
    * @return std::shared_ptr<OptVector<T>>
    */
   std::shared_ptr<OptVector<T>> create_opt_vector(
-      std::shared_ptr<Vector<T>> x) {
+      std::shared_ptr<Vector<T>> x) const {
     return std::make_shared<OptVector<T>>(x, problem);
   }
 
@@ -175,11 +176,11 @@ class Optimizer {
    *
    * @param vars The variable vector
    */
-  void make_vars_consistent(std::shared_ptr<OptVector<T>> vars) {
+  void make_vars_consistent(std::shared_ptr<OptVector<T>> vars) const {
     // Set the design variable values in xs as well
     Vector<T>& x = *vars->x;
     Vector<T>& xs = *vars->xs;
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     for (int i = 0; i < num_variables; i++) {
       if (!is_multiplier[i]) {
@@ -206,12 +207,14 @@ class Optimizer {
   void compute_residual(T barrier_param,
                         const std::shared_ptr<OptVector<T>> vars,
                         const std::shared_ptr<Vector<T>> grad,
-                        std::shared_ptr<OptVector<T>> res) {
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+                        std::shared_ptr<OptVector<T>> res) const {
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the vectors to make things easier
     const Vector<T>& x = *vars->x;   // Primal and dual variables
     const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
     const Vector<T>& lb = *lower;
     const Vector<T>& ub = *upper;
     const Vector<T>& g = *grad;
@@ -257,13 +260,14 @@ class Optimizer {
    * @param reduced The reduced residual vector
    */
   void compute_reduced_residual(const std::shared_ptr<OptVector<T>> vars,
-                                const std::shared_vector<OptVector<T>> res,
-                                std::shared_ptr<Vector<T>> reduced) {
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+                                const std::shared_ptr<OptVector<T>> res,
+                                std::shared_ptr<Vector<T>> reduced) const {
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the optimization state vectors to make things easier
-    const Vector<T>& x = *vars->x;   // Primal and dual variables
     const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
     const Vector<T>& lb = *lower;
     const Vector<T>& ub = *upper;
 
@@ -277,12 +281,12 @@ class Optimizer {
     Vector<T>& rx = *reduced;
 
     for (int i = 0; i < num_variables; i++) {
-      rx[i] = res[i];
+      rx[i] = bx[i];
 
       T contrib = 0.0;
       if (lb[i] < ub[i]) {
         if (!std::isinf(lb[i])) {
-          contrib += bzl[i] / (xs[i] - lb[i])
+          contrib += bzl[i] / (xs[i] - lb[i]);
         }
         if (!std::isinf(ub[i])) {
           contrib -= bzu[i] / (ub[i] - xs[i]);
@@ -307,20 +311,21 @@ class Optimizer {
    */
   void compute_update_from_reduced(
       const std::shared_ptr<OptVector<T>> vars,
-      const std::shared_vector<OptVector<T>> res,
+      const std::shared_ptr<OptVector<T>> res,
       const std::shared_ptr<Vector<T>> reduced_update,
-      std::shared_ptr<OptVector<T>> update) {
+      std::shared_ptr<OptVector<T>> update) const {
     // Get the multiplier indicator array
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the optimization state vectors to make things easier
     const Vector<T>& x = *vars->x;   // Primal and dual variables
     const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
     const Vector<T>& lb = *lower;
     const Vector<T>& ub = *upper;
 
     // Set references to the input residuals
-    const Vector<T>& bx = *res->x;
     const Vector<T>& bxs = *res->xs;
     const Vector<T>& bzl = *res->zl;
     const Vector<T>& bzu = *res->zu;
@@ -332,7 +337,7 @@ class Optimizer {
     Vector<T>& pzu = *update->zu;
 
     // Copy the update for the design variables and dual variables
-    px->copy(*reduced_update);
+    px.copy(*reduced_update);
 
     // Set the values into the full update
     for (int i = 0; i < num_variables; i++) {
@@ -343,7 +348,7 @@ class Optimizer {
         T contrib = 0.0;
         if (lb[i] < ub[i]) {
           if (!std::isinf(lb[i])) {
-            contrib += bzl[i] / (xs[i] - lb[i])
+            contrib += bzl[i] / (xs[i] - lb[i]);
           }
           if (!std::isinf(ub[i])) {
             contrib -= bzu[i] / (ub[i] - xs[i]);
@@ -351,7 +356,7 @@ class Optimizer {
         }
 
         // Compute the update for the slacks, multipliers and bounds
-        pxs[i] = Cinv * (px[i] - bx[i] - contrib);
+        pxs[i] = Cinv * (px[i] - bxs[i] - contrib);
       } else {
         // Step should be consistent for the design variable components
         pxs[i] = px[i];
@@ -384,8 +389,15 @@ class Optimizer {
    * @param mat The CSR Matrix for the Hessian
    */
   void add_diagonal(const std::shared_ptr<OptVector<T>> vars,
-                    std::shared_ptr<CSRMat<T>> mat) {
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+                    std::shared_ptr<CSRMat<T>> mat) const {
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
+
+    const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
+    const Vector<T>& lb = *lower;
+    const Vector<T>& ub = *upper;
+
     Vector<T>& diag = *diagonal;
 
     for (int i = 0; i < num_variables; i++) {
@@ -424,12 +436,14 @@ class Optimizer {
    */
   void compute_max_step(const T tau, const std::shared_ptr<OptVector<T>> vars,
                         const std::shared_ptr<OptVector<T>> update,
-                        T& alpha_x_max, T& alpha_z_max) {
+                        T& alpha_x_max, T& alpha_z_max) const {
     // Get the multiplier indicator array
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the optimization state vectors to make things easier
     const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
     const Vector<T>& lb = *lower;
     const Vector<T>& ub = *upper;
 
@@ -508,15 +522,15 @@ class Optimizer {
    */
   void apply_step_update(const T alpha_x, const T alpha_z,
                          const std::shared_ptr<OptVector<T>> update,
-                         std::shared_ptr<OptVector<T>> vars) {
+                         std::shared_ptr<OptVector<T>> vars) const {
     // Get the multiplier indicator array
-    const Vector<int>& is_multplier = *problem->get_multiplier_indicator();
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the optimization state vectors to make things easier
     Vector<T>& x = *vars->x;   // Primal and dual variables
     Vector<T>& xs = *vars->x;  // Primal and slack variables
-    Vector<T>& lb = *lower;
-    Vector<T>& ub = *upper;
+    Vector<T>& zl = *vars->zl;
+    Vector<T>& zu = *vars->zu;
 
     // Set references for the full update
     const Vector<T>& px = *update->x;
@@ -539,7 +553,8 @@ class Optimizer {
   }
 
  private:
-  T compute_Cinv(const T lb, const T ub, const T zl, const T zu, const T xs) {
+  T compute_Cinv(const T lb, const T ub, const T zl, const T zu,
+                 const T xs) const {
     T C = 0.0;
     if (lb < ub) {
       // If the lower bound isn't infinite, add its value

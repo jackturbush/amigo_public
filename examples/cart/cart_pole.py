@@ -318,7 +318,7 @@ if args.build:
         compile_args=compile_args, link_args=link_args, define_macros=define_macros
     )
 
-model.initialize(order_for_block=True)
+model.initialize()
 
 print(f"Num variables:              {model.num_variables}")
 print(f"Num constraints:            {model.num_constraints}")
@@ -326,6 +326,9 @@ print(f"Num constraints:            {model.num_constraints}")
 prob = model.create_opt_problem()
 
 x = prob.create_vector()
+lower = prob.create_vector()
+upper = prob.create_vector()
+
 x_array = x.get_array()
 x_array[:] = 0.0
 
@@ -336,19 +339,22 @@ x_array[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
 x_array[q_idx[:, 2]] = 1.0
 x_array[q_idx[:, 3]] = 1.0
 
-opt = am.Optimizer(model, prob, x_init=x_array)
-xopt, gnrm = opt.optimize(max_iters=1)
+lower.get_array()[:] = model.get_values_from_meta("lower")
+upper.get_array()[:] = model.get_values_from_meta("upper")
 
-d = xopt[model.get_indices("cart.q[:, 0]")]
-theta = xopt[model.get_indices("cart.q[:, 1]")]
-xctrl = xopt[model.get_indices("cart.x")]
+opt = am.Optimizer(model, prob, x, lower, upper)
+opt.optimize()
+
+d = x_array[model.get_indices("cart.q[:, 0]")]
+theta = x_array[model.get_indices("cart.q[:, 1]")]
+xctrl = x_array[model.get_indices("cart.x")]
 
 plot(d, theta, xctrl)
-plot_convergence(gnrm)
+# plot_convergence(gnrm)
 visualize(d, theta)
 
 if args.show_sparsity:
-    H = opt.hessian()
+    H = opt._get_scipy_csr_mat()
     plt.figure(figsize=(6, 6))
     plt.spy(H, markersize=0.2)
     plt.title("Sparsity pattern of matrix A")
