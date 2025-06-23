@@ -99,6 +99,7 @@ class Optimizer:
             "initial_barrier_param": 1.0,
             "max_line_search_iterations": 10,
             "check_update_step": False,
+            "backtracting_factor" : 0.5,
         }
 
         default.update(options)
@@ -201,6 +202,8 @@ class Optimizer:
                     break
                 else:
                     line_iters += 1
-                    alpha *= 0.5
+
+                    # Apply a simple backtracking algorithm
+                    alpha *= options["backtracting_factor"]
 
         return
