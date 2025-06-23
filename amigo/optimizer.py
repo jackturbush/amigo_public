@@ -98,6 +98,7 @@ class Optimizer:
             "fraction_to_boundary": 0.95,
             "initial_barrier_param": 1.0,
             "max_line_search_iterations": 10,
+            "check_update_step": False,
         }
 
         default.update(options)
@@ -168,6 +169,10 @@ class Optimizer:
                 self.vars, self.res, self.px, self.update
             )
 
+            # Check the update
+            if options["check_update_step"]:
+                self.optimizer.check_update(self.vars, self.res, self.update, self.hess)
+
             # Compute the max step in the multipliers
             alpha_x, alpha_z = self.optimizer.compute_max_step(
                 tau, self.vars, self.update
@@ -197,8 +202,5 @@ class Optimizer:
                 else:
                     line_iters += 1
                     alpha *= 0.5
-
-            # Check the update
-            # self.optimizer.check_update(self.vars, self.res, self.update, self.hess)
 
         return
