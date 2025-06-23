@@ -1,6 +1,8 @@
 #ifndef AMIGO_OPTIMIZER_H
 #define AMIGO_OPTIMIZER_H
 
+#include <iostream>
+
 #include "component_group_base.h"
 #include "optimization_problem.h"
 
@@ -89,8 +91,7 @@ class OptVector {
  *
  * Now, substituting these expressions into the equation for plam gives:
  *
- * plam = - pzlc + pzuc + blam
- *      = C * ps + blam - (s - lbc)^{-1} * bzlc + (ubc - s)^{-1} * bzuc
+ * - plam + C * ps = blam + (s - lbc)^{-1} * bzlc - (ubc - s)^{-1} * bzuc
  *
  * Where C is defined as
  *
@@ -98,13 +99,13 @@ class OptVector {
  *
  * This can be re-arranged to find
  *
- * ps = C^{-1} * plam -
- *   C^{-1} * (blam - (s - lbc)^{-1} * bzlc + (ubc - s)^{-1} * bzuc)
+ * ps = C^{-1} * (plam + b2)
+ *
+ * where b2 = (blam + (s - lbc)^{-1} * bzlc - (ubc - s)^{-1} * bzuc)
  *
  * Subsituting this into the second equation gives
  *
- * A * px - C^{-1} * plam +
- * C^{-1} * (blam - (s - lb)^{-1} * bzl + (ub - xs)^{-1} * bzu) = bc
+ * A * px - C^{-1} * plam - C^{-1} * b2 = bc
  *
  * This can be expressed as
  *
@@ -112,8 +113,11 @@ class OptVector {
  *
  * where rc is:
  *
- * rc = bc - C^{-1} * blam + C^{-1} * (s - lbc)^{-1} * bzlc -
- *      C^{-1} * (ubc - s)^{-1} * bzuc
+ * rc = bc + C^{-1} * b2
+ *
+ * or, expanding terms
+ *
+ * rc = bc + C^{-1} * (blam + (s - lbc)^{-1} * bzlc - (ubc - s)^{-1} * bzuc)
  *
  * Finding pzlx and pzux from pzl and pzu gives
  *
@@ -169,6 +173,49 @@ class InteriorPointOptimizer {
   std::shared_ptr<OptVector<T>> create_opt_vector(
       std::shared_ptr<Vector<T>> x) const {
     return std::make_shared<OptVector<T>>(x, problem);
+  }
+
+  /**
+   * @brief Initialize the multipliers and slack variables in the problem
+   *
+   */
+  void initialize_multipliers_and_slacks(
+      std::shared_ptr<OptVector<T>> vars) const {
+    // Get the multiplier indicator array
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
+
+    // Extract the optimization state vectors to make things easier
+    Vector<T>& x = *vars->x;   // Primal and dual variables
+    Vector<T>& xs = *vars->x;  // Primal and slack variables
+    Vector<T>& zl = *vars->zl;
+    Vector<T>& zu = *vars->zu;
+
+    const Vector<T>& lb = *lower;
+    const Vector<T>& ub = *upper;
+
+    for (int i = 0; i < num_variables; i++) {
+      if (is_multiplier[i]) {
+        // Set the multipliers to 1.0
+        x[i] = 1.0;
+
+        // Set the slack variables to the mid-point
+        if (!std::isinf(lb[i]) && !std::isinf(ub[i])) {
+          xs[i] = 0.5 * (lb[i] + ub[i]);
+        }
+      } else {
+        if (lb[i] <= x[i] && x[i] <= ub[i]) {
+          xs[i] = x[i];
+        } else {
+          if (!std::isinf(lb[i]) && !std::isinf(ub[i])) {
+            xs[i] = x[i] = 0.5 * (lb[i] + ub[i]);
+          }
+        }
+      }
+
+      // Set the lower and upper multipliers to 1.0
+      zl[i] = 1.0;
+      zu[i] = 1.0;
+    }
   }
 
   /**
@@ -229,10 +276,10 @@ class InteriorPointOptimizer {
     for (int i = 0; i < num_variables; i++) {
       if (is_multiplier[i]) {
         rx[i] = -(g[i] - xs[i]);
-        rxs[i] = x[i] + zl[i] - zu[i];
+        rxs[i] = -(zu[i] - zl[i] - x[i]);
       } else {
         rx[i] = -(g[i] - zl[i] + zu[i]);
-        rxs[i] = rx[i];
+        rxs[i] = 0.0;
       }
 
       rzl[i] = 0.0;
@@ -252,8 +299,8 @@ class InteriorPointOptimizer {
    * @brief Compute the reduced residual from the full primal-dual residual
    *
    * reduced = [ bx + (x - lbx)^{-1} * bzlx - (ubx - x)^{-1} * bzux ]
-   *           [ bc - C^{-1} * (blam + (s - lbc)^{-1} * bzlc -
-   *             (ubc - s)^{-1} * bzuc) ]
+   *           [ bc + C^{-1} * (blam + (s - lbc)^{-1} * bzlc
+   *                - (ubc - s)^{-1} * bzuc) ]
    *
    * @param vars The values of the optimization variables
    * @param res The full residual vector
@@ -295,7 +342,7 @@ class InteriorPointOptimizer {
 
       if (is_multiplier[i]) {
         T Cinv = compute_Cinv(lb[i], ub[i], zl[i], zu[i], xs[i]);
-        rx[i] -= Cinv * (bxs[i] + contrib);
+        rx[i] += Cinv * (bxs[i] + contrib);
       } else {
         rx[i] += contrib;
       }
@@ -318,7 +365,6 @@ class InteriorPointOptimizer {
     const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
 
     // Extract the optimization state vectors to make things easier
-    const Vector<T>& x = *vars->x;   // Primal and dual variables
     const Vector<T>& xs = *vars->x;  // Primal and slack variables
     const Vector<T>& zl = *vars->zl;
     const Vector<T>& zu = *vars->zu;
@@ -345,6 +391,7 @@ class InteriorPointOptimizer {
       if (is_multiplier[i]) {
         T Cinv = compute_Cinv(lb[i], ub[i], zl[i], zu[i], xs[i]);
 
+        // contrib = (s - lc)^{-1} * bzl - (uc - s)^{-1} * bzu
         T contrib = 0.0;
         if (lb[i] < ub[i]) {
           if (!std::isinf(lb[i])) {
@@ -356,9 +403,9 @@ class InteriorPointOptimizer {
         }
 
         // Compute the update for the slacks, multipliers and bounds
-        pxs[i] = Cinv * (px[i] - bxs[i] - contrib);
+        // ps = C^{-1} * (plam + blam + contrib))
+        pxs[i] = Cinv * (px[i] + bxs[i] + contrib);
       } else {
-        // Step should be consistent for the design variable components
         pxs[i] = px[i];
       }
 
@@ -368,10 +415,10 @@ class InteriorPointOptimizer {
       // Compute the update for the design variable bounds
       if (lb[i] < ub[i]) {
         if (!std::isinf(lb[i])) {
-          pzl[i] = (bzl[i] - zl[i] * pxs[i]) / (x[i] - lb[i]);
+          pzl[i] = (bzl[i] - zl[i] * pxs[i]) / (xs[i] - lb[i]);
         }
         if (!std::isinf(ub[i])) {
-          pzu[i] = (bzu[i] + zu[i] * pxs[i]) / (ub[i] - x[i]);
+          pzu[i] = (bzu[i] + zu[i] * pxs[i]) / (ub[i] - xs[i]);
         }
       }
     }
@@ -550,6 +597,101 @@ class InteriorPointOptimizer {
       zl[i] += alpha_z * pzl[i];
       zu[i] += alpha_z * pzu[i];
     }
+  }
+
+  /**
+   * @brief Check whether the computed updates satisfy the linearization of the
+   * optimality conditions
+   *
+   * @param vars Optimization state variables
+   * @param res The full system of residuals
+   * @param update The update to the full system
+   * @param hessian The Hessian matrix - must be recomputed
+   */
+  void check_update(const std::shared_ptr<OptVector<T>> vars,
+                    const std::shared_ptr<OptVector<T>> res,
+                    const std::shared_ptr<OptVector<T>> update,
+                    const std::shared_ptr<CSRMat<T>> hessian) {
+    // Recompute the Hessian so it doesn't have the diagonal terms
+    problem->hessian(vars->x, hessian);
+
+    // Get the multiplier indicator array
+    const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
+
+    // Extract the optimization state vectors to make things easier
+    const Vector<T>& xs = *vars->x;  // Primal and slack variables
+    const Vector<T>& zl = *vars->zl;
+    const Vector<T>& zu = *vars->zu;
+    const Vector<T>& lb = *lower;
+    const Vector<T>& ub = *upper;
+
+    // Set references for the full update
+    const Vector<T>& px = *update->x;
+    const Vector<T>& pxs = *update->xs;
+    const Vector<T>& pzl = *update->zl;
+    const Vector<T>& pzu = *update->zu;
+
+    std::shared_ptr<Vector<T>> tmp = problem->create_vector();
+    Vector<T>& t = *tmp;
+
+    // Form the residuals from the different expressions
+    // [ H  |  A^T ][ px   ] - pzlx + pzux = [ bx ]
+    // [ A  |    0 ][ plam ] - ps          = [ bc ]
+
+    tmp->zero();
+    hessian->mult(update->x, tmp);
+    for (int i = 0; i < num_variables; i++) {
+      if (is_multiplier[i]) {
+        t[i] -= pxs[i];
+      } else {
+        t[i] += -pzl[i] + pzu[i];
+      }
+    }
+    tmp->axpy(-1.0, *res->x);
+    std::printf("%-40s %15.6e\n", "||H * px - zl + zu - bx|| ",
+                std::sqrt(tmp->dot(*tmp)));
+
+    // -plam - pzlc + pzuc = blam
+    tmp->zero();
+    for (int i = 0; i < num_variables; i++) {
+      if (is_multiplier[i]) {
+        t[i] = -px[i] - pzl[i] + pzu[i];
+      }
+    }
+    tmp->axpy(-1.0, *res->xs);
+    for (int i = 0; i < num_variables; i++) {
+      if (!is_multiplier[i]) {
+        t[i] = 0.0;
+      }
+    }
+    std::printf("%-40s %15.6e\n", "||-plam - pzlc + pzuc - blam|| ",
+                std::sqrt(tmp->dot(*tmp)));
+
+    // (xs - lb) * pzl + pxs * zl = bzl
+    tmp->zero();
+    for (int i = 0; i < num_variables; i++) {
+      if (lb[i] < ub[i]) {
+        if (!std::isinf(lb[i])) {
+          t[i] = (xs[i] - lb[i]) * pzl[i] + pxs[i] * zl[i];
+        }
+      }
+    }
+    tmp->axpy(-1.0, *res->zl);
+    std::printf("%-40s %15.6e\n", "||(xs - lb) * pzl + pxs * zl - bzl|| ",
+                std::sqrt(tmp->dot(*tmp)));
+
+    // (ub - xs) * pzu - pxs * zu = bzu
+    tmp->zero();
+    for (int i = 0; i < num_variables; i++) {
+      if (lb[i] < ub[i]) {
+        if (!std::isinf(ub[i])) {
+          t[i] = (ub[i] - xs[i]) * pzu[i] - pxs[i] * zu[i];
+        }
+      }
+    }
+    tmp->axpy(-1.0, *res->zu);
+    std::printf("%-40s %15.6e\n", "||(ub - xs) * pzu + pxs * zu - bzu|| ",
+                std::sqrt(tmp->dot(*tmp)));
   }
 
  private:

@@ -251,7 +251,6 @@ def create_cart_model(module_name="cart_pole"):
     ic = InitialConditions()
     fc = FinalConditions()
 
-    module_name = "cart_pole"
     model = am.Model(module_name)
 
     model.add_component("cart", num_time_steps + 1, cart)
@@ -304,8 +303,6 @@ args = parser.parse_args()
 model = create_cart_model()
 
 if args.build:
-    model.generate_cpp()
-
     compile_args = []
     link_args = []
     define_macros = []
@@ -323,31 +320,26 @@ model.initialize()
 print(f"Num variables:              {model.num_variables}")
 print(f"Num constraints:            {model.num_constraints}")
 
-prob = model.create_opt_problem()
+prob = model.get_opt_problem()
 
-x = prob.create_vector()
-lower = prob.create_vector()
-upper = prob.create_vector()
-
-x_array = x.get_array()
-x_array[:] = 0.0
+# Get the design variables
+xdv = prob.create_vector()
+x = xdv.get_array()
+x[:] = 0.0
 
 # # Set the initial conditions based on the varaibles
 q_idx = model.get_indices("cart.q")
-x_array[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
-x_array[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
-x_array[q_idx[:, 2]] = 1.0
-x_array[q_idx[:, 3]] = 1.0
+x[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
+x[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
+x[q_idx[:, 2]] = 1.0
+x[q_idx[:, 3]] = 1.0
 
-lower.get_array()[:] = model.get_values_from_meta("lower")
-upper.get_array()[:] = model.get_values_from_meta("upper")
-
-opt = am.Optimizer(model, prob, x, lower, upper)
+opt = am.Optimizer(model, xdv)
 opt.optimize()
 
-d = x_array[model.get_indices("cart.q[:, 0]")]
-theta = x_array[model.get_indices("cart.q[:, 1]")]
-xctrl = x_array[model.get_indices("cart.x")]
+d = x[model.get_indices("cart.q[:, 0]")]
+theta = x[model.get_indices("cart.q[:, 1]")]
+xctrl = x[model.get_indices("cart.x")]
 
 plot(d, theta, xctrl)
 # plot_convergence(gnrm)

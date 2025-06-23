@@ -179,12 +179,7 @@ class Vector {
   }
 
   void axpy(T alpha, const Vector<T>& x) {
-    if ((vtype == VectorLocation::DEVICE_ONLY ||
-         vtype == VectorLocation::HOST_AND_DEVICE) &&
-        (x.vtype == VectorLocation::DEVICE_ONLY ||
-         x.vtype == VectorLocation::HOST_AND_DEVICE)) {
-      backend.axpy_kernel(alpha, x.get_device_array());
-    } else if (array && x.array) {
+    if (array && x.array) {
       for (int i = 0; i < size; i++) {
         array[i] += alpha * x.array[i];
       }

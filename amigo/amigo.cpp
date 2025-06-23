@@ -296,6 +296,9 @@ PYBIND11_MODULE(amigo, mod) {
             return self.create_opt_vector();
           },
           py::arg("x") = py::none())
+      .def("initialize_multipliers_and_slacks",
+           &amigo::InteriorPointOptimizer<
+               double>::initialize_multipliers_and_slacks)
       .def("make_vars_consistent",
            &amigo::InteriorPointOptimizer<double>::make_vars_consistent)
       .def("compute_residual",
@@ -315,5 +318,7 @@ PYBIND11_MODULE(amigo, mod) {
              return py::make_tuple(alpha_x, alpha_z);
            })
       .def("apply_step_update",
-           &amigo::InteriorPointOptimizer<double>::apply_step_update);
+           &amigo::InteriorPointOptimizer<double>::apply_step_update)
+      .def("check_update",
+           &amigo::InteriorPointOptimizer<double>::check_update);
 }
