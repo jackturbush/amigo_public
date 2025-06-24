@@ -99,7 +99,7 @@ class Optimizer:
             "initial_barrier_param": 1.0,
             "max_line_search_iterations": 10,
             "check_update_step": False,
-            "backtracting_factor" : 0.5,
+            "backtracting_factor": 0.5,
         }
 
         default.update(options)
@@ -119,6 +119,7 @@ class Optimizer:
         self.prob.gradient(self.vars.x, self.grad)
 
         line_iters = 0
+        alpha_prev = 0.0
         for i in range(max_iters):
             # Compute the complete KKT residual
             res_norm = self.optimizer.compute_residual(
@@ -146,11 +147,11 @@ class Optimizer:
 
             # Compute the residual norm
             if i % 10 == 0:
-                line = (
-                    f"{'Iter':>10s} {'Residual':>15s} {'mu':>15s} {'Line iters':>15s}"
-                )
+                line = f"{'Iter':>10s} {'Residual':>15s} {'mu':>15s} "
+                line += f"{'Line iters':>15s} {'alpha':>15s}"
                 print(line)
-            line = f"{i:10d} {res_norm:15.4e} {barrier_param:15.4e} {line_iters:15d}"
+            line = f"{i:10d} {res_norm:15.4e} {barrier_param:15.4e} "
+            line += f"{line_iters:15d} {alpha_prev:15.4e}"
             print(line)
 
             # Compute the reduced residual for the right-hand-side of the KKT system
@@ -205,5 +206,7 @@ class Optimizer:
 
                     # Apply a simple backtracking algorithm
                     alpha *= options["backtracting_factor"]
+
+            alpha_prev = alpha
 
         return

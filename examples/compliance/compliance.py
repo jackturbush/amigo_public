@@ -77,7 +77,7 @@ class Helmholtz(am.Component):
         self.set_compute_args(compute_args)
 
         # The filter radius
-        self.add_constant("r_filter", 0.1)
+        self.add_constant("r_filter", 0.2)
 
         # The x/y coordinates
         self.add_data("x_coord", shape=(4,))
@@ -190,7 +190,8 @@ class Topology(am.Component):
         Ny = self.vars["Ny"]
 
         rho0 = 0.25 * (rho[0] + rho[1] + rho[2] + rho[3])
-        self.vars["E0"] = E * (rho0**p + kappa)
+        # self.vars["E0"] = E * (rho0**p + kappa)
+        self.vars["E0"] = E * (rho0 + kappa)
         E0 = self.vars["E0"]
 
         self.vars["Ux"] = [[dot(Nx, u), dot(Ny, u)], [dot(Nx, v), dot(Ny, v)]]
@@ -284,13 +285,14 @@ class FixedBoundaryCondition(am.Component):
         super().__init__()
 
         self.add_input("u", value=1.0)
-        self.add_input("v", value=1.0)
-        self.add_output("u_res", value=1.0, lower=0.0, upper=0.0)
-        self.add_output("v_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_input("lam", value=1.0)
+
+        self.add_output("disp_res", value=1.0, lower=0.0, upper=0.0)
+        self.add_output("bc_res", value=1.0, lower=0.0, upper=0.0)
 
     def compute(self):
-        self.outputs["u_res"] = self.inputs["u"]
-        self.outputs["v_res"] = self.inputs["v"]
+        self.outputs["bc_res"] = self.inputs["u"]
+        self.outputs["disp_res"] = self.inputs["lam"]
 
 
 class AppliedLoad(am.Component):
@@ -315,7 +317,6 @@ class NodeSource(am.Component):
     def __init__(self):
         super().__init__()
 
-        # Filter input values
         self.add_input("x", value=0.5, lower=0.0, upper=1.0)
         self.add_input("rho", value=0.5, lower=0.0, upper=1.0)
         self.add_input("u", value=0.0, lower=-100, upper=100)
@@ -348,7 +349,7 @@ parser.add_argument(
 parser.add_argument(
     "--order-type",
     choices=["amd", "nd", "natural"],
-    default="amd",
+    default="nd",
     help="Ordering strategy to use (default: amd)",
 )
 parser.add_argument(
@@ -367,12 +368,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# nx = 256
-# ny = 128
 # nx = 128
 # ny = 64
+
 nx = 64
 ny = 32
+
 nnodes = (nx + 1) * (ny + 1)
 nelems = nx * ny
 
@@ -443,10 +444,15 @@ model.link("mass.rho", "src.rho", tgt_indices=conn)
 model.link("mass.mass_con[1:]", "mass.mass_con[0]")
 
 # Add boundary conditions
-bcs = FixedBoundaryCondition()
-model.add_component("bcs", (ny + 1), bcs)
-model.link("src.u", "bcs.u", src_indices=nodes[0, :])
-model.link("src.v", "bcs.v", src_indices=nodes[0, :])
+bcs_u = FixedBoundaryCondition()
+model.add_component("bcs_u", (ny + 1), bcs_u)
+model.link("src.u", "bcs_u.u", src_indices=nodes[0, :])
+model.link("src.u_res", "bcs_u.disp_res", src_indices=nodes[0, :])
+
+bcs_v = FixedBoundaryCondition()
+model.add_component("bcs_v", (ny + 1), bcs_v)
+model.link("src.v", "bcs_v.u", src_indices=nodes[0, :])
+model.link("src.v_res", "bcs_v.disp_res", src_indices=nodes[0, :])
 
 # Set the applied load
 load = AppliedLoad()
@@ -512,17 +518,11 @@ upper = prob.create_vector()
 lb = lower.get_array()
 ub = upper.get_array()
 
-lb[model.get_indices("src.x")] = 0.0
+lb[model.get_indices("src.x")] = 1e-3
 ub[model.get_indices("src.x")] = 1.0
 
-lb[model.get_indices("src.rho")] = 0.0
-ub[model.get_indices("src.rho")] = 1.0
-
-lb[model.get_indices("src.u")] = -100
-ub[model.get_indices("src.u")] = 100
-
-lb[model.get_indices("src.v")] = -100
-ub[model.get_indices("src.v")] = 100
+lb[model.get_indices("src.rho")] = 1e-3
+ub[model.get_indices("src.rho")] = float("inf")
 
 start = time.perf_counter()
 mat_obj = prob.create_csr_matrix()
@@ -534,18 +534,28 @@ prob.hessian(xdv, mat_obj)
 end = time.perf_counter()
 print(f"Matrix computation time:    {end - start:.6f} seconds")
 
-H = am.tocsr(mat_obj)
-of = ["src.u_res", "src.v_res", "bcs.u_res", "bcs.v_res"]
-wrt = ["src.u", "src.v", "bcs.u", "bcs.v"]
-K, of_dict, wrt_dict = model.extract_submatrix(H, of=of, wrt=wrt)
 
-print(K - K.T)
+def solve_subproblem(model):
+    H = am.tocsr(mat_obj)
+    of = ["src.u_res", "src.v_res", "bcs_u.bc_res", "bcs_v.bc_res"]
+    wrt = ["src.u", "src.v", "bcs_u.lam", "bcs_v.lam"]
+    K, of_dict, wrt_dict = model.extract_submatrix(H, of=of, wrt=wrt)
 
-f = np.zeros(K.shape[0])
-f[of_dict["src.v_res"][nodes[-1, 0]]] = 1
-u = spsolve(K, f)
+    f = np.zeros(K.shape[0])
+    f[of_dict["src.v_res"][nodes[-1, 0]]] = 1
+    u = spsolve(K, f)
 
-print(K.shape)
+    X, Y = np.meshgrid(xpts, ypts)
+    vals = u[wrt_dict["src.v"]].reshape((nx + 1, ny + 1)).T
+
+    # Plot using contourf
+    plt.contourf(X, Y, vals, levels=20, cmap="viridis")
+    plt.colorbar(label="Z value")
+    plt.xlabel("x")
+    plt.ylabel("y")
+
+    plt.show()
+
 
 # grad = prob.create_vector()
 # start = time.perf_counter()
@@ -564,18 +574,31 @@ print(K.shape)
 #     plt.title("Sparsity pattern of matrix A")
 #     plt.show()
 
-# opt = am.Optimizer(model, x=xdv, lower=lower, upper=upper)
-# opt.optimize({"max_iterations": 100})
+opt = am.Optimizer(model, x=xdv, lower=lower, upper=upper)
+
+options = {
+    "max_iterations": 100,
+    "initial_barrier_param": 0.1,
+    "max_line_search_iterations": 1,
+}
+opt.optimize(options)
+
+vals = xdv.get_array()[model.get_indices("src.rho")]
+vals = vals.reshape((nx + 1, ny + 1)).T
 
 X, Y = np.meshgrid(xpts, ypts)
-vals = u[wrt_dict["src.v"]].reshape((nx + 1, ny + 1)).T
-
-# vals = x.get_array()[model.get_indices("src.rho")]
-# vals = vals.reshape((nx + 1, ny + 1)).T
-
-# Plot using contourf
+plt.figure()
 plt.contourf(X, Y, vals, levels=20, cmap="viridis")
-plt.colorbar(label="Z value")
+plt.colorbar(label="rho value")
+plt.xlabel("x")
+plt.ylabel("y")
+
+vals = xdv.get_array()[model.get_indices("src.x")]
+vals = vals.reshape((nx + 1, ny + 1)).T
+
+plt.figure()
+plt.contourf(X, Y, vals, levels=20, cmap="viridis")
+plt.colorbar(label="x value")
 plt.xlabel("x")
 plt.ylabel("y")
 
