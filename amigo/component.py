@@ -236,6 +236,19 @@ class Meta:
             f"     scale={self.scale}, label={self.label!r})"
         )
 
+    def todict(self):
+        return {
+            "name": self.name,
+            "shape": self.shape,
+            "value": self.value,
+            "type": str(self.type),
+            "lower": self.lower,
+            "upper": self.upper,
+            "units": self.units,
+            "scale": self.scale,
+            "label": self.label,
+        }
+
 
 class InputSet:
     """

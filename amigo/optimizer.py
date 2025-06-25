@@ -2,6 +2,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 from .amigo import InteriorPointOptimizer
+from .model import ModelVector
 
 
 class Optimizer:
@@ -13,6 +14,8 @@ class Optimizer:
         if x is None:
             self.x = self.prob.create_vector()
             self.x.get_array()[:] = model.get_values_from_meta("value")
+        elif isinstance(x, ModelVector):
+            self.x = x.get_opt_problem_vec()
         else:
             self.x = x
 
@@ -20,11 +23,15 @@ class Optimizer:
         if lower is None:
             self.lower = self.prob.create_vector()
             self.lower.get_array()[:] = model.get_values_from_meta("lower")
+        elif isinstance(lower, ModelVector):
+            self.lower = lower.get_opt_problem_vec()
         else:
             self.lower = lower
         if upper is None:
             self.upper = self.prob.create_vector()
             self.upper.get_array()[:] = model.get_values_from_meta("upper")
+        elif isinstance(upper, ModelVector):
+            self.upper = upper.get_opt_problem_vec()
         else:
             self.upper = upper
 

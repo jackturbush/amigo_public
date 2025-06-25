@@ -323,32 +323,27 @@ print(f"Num constraints:            {model.num_constraints}")
 prob = model.get_opt_problem()
 
 # Get the design variables
-xdv = prob.create_vector()
-x = xdv.get_array()
+x = model.create_vector()
 x[:] = 0.0
 
 # # Set the initial conditions based on the varaibles
-q_idx = model.get_indices("cart.q")
-x[q_idx[:, 0]] = np.linspace(0, 2.0, num_time_steps + 1)
-x[q_idx[:, 1]] = np.linspace(0, np.pi, num_time_steps + 1)
-x[q_idx[:, 2]] = 1.0
-x[q_idx[:, 3]] = 1.0
+x["cart.q[:, 0]"] = np.linspace(0, 2.0, num_time_steps + 1)
+x["cart.q[:, 1]"] = np.linspace(0, np.pi, num_time_steps + 1)
+x["cart.q[:, 2]"] = 1.0
+x["cart.q[:, 3]"] = 1.0
 
 # Apply lower and upper bound constraints
-lower = prob.create_vector()
-upper = prob.create_vector()
-lb = lower.get_array()
-ub = upper.get_array()
+lower = model.create_vector()
+upper = model.create_vector()
+lower["cart.x"] = -50
+upper["cart.x"] = 50
 
-lb[model.get_indices("cart.x")] = -50
-ub[model.get_indices("cart.x")] = 50
-
-opt = am.Optimizer(model, xdv, lower=lower, upper=upper)
+opt = am.Optimizer(model, x, lower=lower, upper=upper)
 opt.optimize({"max_iterations": 100})
 
-d = x[model.get_indices("cart.q[:, 0]")]
-theta = x[model.get_indices("cart.q[:, 1]")]
-xctrl = x[model.get_indices("cart.x")]
+d = x["cart.q[:, 0]"]
+theta = x["cart.q[:, 1]"]
+xctrl = x["cart.x"]
 
 plot(d, theta, xctrl)
 # plot_convergence(gnrm)

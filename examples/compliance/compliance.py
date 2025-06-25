@@ -494,35 +494,29 @@ print(f"Num variables:              {model.num_variables}")
 print(f"Num constraints:            {model.num_constraints}")
 
 # Set the problem data
-data = prob.get_data_vector()
-data_array = data.get_array()
-data_array[model.get_indices("src.x_coord")] = x_coord
-data_array[model.get_indices("src.y_coord")] = y_coord
+data = model.get_data_vector()
+data["src.x_coord"] = x_coord
+data["src.y_coord"] = y_coord
 
 # Set the initial problem variable values
-xdv = prob.create_vector()
-x = xdv.get_array()
+x = model.create_vector()
 
 # Set initial design variable values
-x[model.get_indices("src.x")] = 0.5
-x[model.get_indices("src.rho")] = 0.5
+x["src.x"] = 0.5
+x["src.rho"] = 0.5
 
 # Set initial multiplier values for the constraints
-x[model.get_indices("src.rho_res")] = 1.0
-x[model.get_indices("src.u_res")] = 1.0
-x[model.get_indices("src.v_res")] = 1.0
+x["src.rho_res"] = 1.0
+x["src.u_res"] = 1.0
+x["src.v_res"] = 1.0
 
 # Apply lower and upper bound constraints
-lower = prob.create_vector()
-upper = prob.create_vector()
-lb = lower.get_array()
-ub = upper.get_array()
-
-lb[model.get_indices("src.x")] = 1e-3
-ub[model.get_indices("src.x")] = 1.0
-
-lb[model.get_indices("src.rho")] = 1e-3
-ub[model.get_indices("src.rho")] = float("inf")
+lower = model.create_vector()
+upper = model.create_vector()
+lower["src.x"] = 1e-3
+upper["src.x"] = 1.0
+lower["src.rho"] = 1e-3
+upper["src.rho"] = float("inf")
 
 start = time.perf_counter()
 mat_obj = prob.create_csr_matrix()
@@ -530,51 +524,17 @@ end = time.perf_counter()
 print(f"Matrix initialization time: {end - start:.6f} seconds")
 
 start = time.perf_counter()
-prob.hessian(xdv, mat_obj)
+prob.hessian(x.get_opt_problem_vec(), mat_obj)
 end = time.perf_counter()
 print(f"Matrix computation time:    {end - start:.6f} seconds")
 
+grad = prob.create_vector()
+start = time.perf_counter()
+prob.gradient(x.get_opt_problem_vec(), grad)
+end = time.perf_counter()
+print(f"Residual computation time:  {end - start:.6f} seconds")
 
-def solve_subproblem(model):
-    H = am.tocsr(mat_obj)
-    of = ["src.u_res", "src.v_res", "bcs_u.bc_res", "bcs_v.bc_res"]
-    wrt = ["src.u", "src.v", "bcs_u.lam", "bcs_v.lam"]
-    K, of_dict, wrt_dict = model.extract_submatrix(H, of=of, wrt=wrt)
-
-    f = np.zeros(K.shape[0])
-    f[of_dict["src.v_res"][nodes[-1, 0]]] = 1
-    u = spsolve(K, f)
-
-    X, Y = np.meshgrid(xpts, ypts)
-    vals = u[wrt_dict["src.v"]].reshape((nx + 1, ny + 1)).T
-
-    # Plot using contourf
-    plt.contourf(X, Y, vals, levels=20, cmap="viridis")
-    plt.colorbar(label="Z value")
-    plt.xlabel("x")
-    plt.ylabel("y")
-
-    plt.show()
-
-
-# grad = prob.create_vector()
-# start = time.perf_counter()
-# for i in range(10):
-#     prob.gradient(xdv, grad)
-# end = time.perf_counter()
-# print(f"Residual computation time:  {end - start:.6f} seconds")
-
-# if args.show_sparsity:
-#     nrows, ncols, nnz, rowp, cols = mat_obj.get_nonzero_structure()
-#     data = mat_obj.get_data()
-#     jac = csr_matrix((data, cols, rowp), shape=(nrows, ncols))
-
-#     plt.figure(figsize=(6, 6))
-#     plt.spy(jac, markersize=0.2)
-#     plt.title("Sparsity pattern of matrix A")
-#     plt.show()
-
-opt = am.Optimizer(model, x=xdv, lower=lower, upper=upper)
+opt = am.Optimizer(model, x=x, lower=lower, upper=upper)
 
 options = {
     "max_iterations": 100,
@@ -583,7 +543,7 @@ options = {
 }
 opt.optimize(options)
 
-vals = xdv.get_array()[model.get_indices("src.rho")]
+vals = x["src.rho"]
 vals = vals.reshape((nx + 1, ny + 1)).T
 
 X, Y = np.meshgrid(xpts, ypts)
@@ -593,7 +553,7 @@ plt.colorbar(label="rho value")
 plt.xlabel("x")
 plt.ylabel("y")
 
-vals = xdv.get_array()[model.get_indices("src.x")]
+vals = x["src.x"]
 vals = vals.reshape((nx + 1, ny + 1)).T
 
 plt.figure()

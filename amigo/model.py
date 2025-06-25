@@ -1,7 +1,9 @@
 import numpy as np
 import ast
 import sys
+import os
 import importlib
+import inspect
 from .amigo import (
     OrderingType,
     reorder_model,
@@ -10,8 +12,10 @@ from .amigo import (
     AliasTracker,
     AMIGO_INCLUDE_PATH,
     A2D_INCLUDE_PATH,
+    CSRMat,
 )
 from .component import Component
+from scipy.sparse import spmatrix
 
 
 if sys.version_info < (3, 9):
@@ -249,6 +253,35 @@ class ComponentGroup:
         return None
 
 
+class ModelVector:
+    def __init__(self, model, x):
+        self._model = model
+        self._x = x
+
+    def get_opt_problem_vec(self):
+        return self._x
+
+    def __getitem__(self, expr):
+        if isinstance(expr, str):
+            x_array = self._x.get_array()
+            return x_array[self._model.get_indices(expr)]
+        elif isinstance(expr, (int, np.integer, slice)):
+            x_array = self._x.get_array()
+            return x_array[expr]
+        else:
+            raise KeyError("Key type {expr} not accepted")
+
+    def __setitem__(self, expr, item):
+        if isinstance(expr, str):
+            x_array = self._x.get_array()
+            x_array[self._model.get_indices(expr)] = item
+        elif isinstance(expr, (int, np.integer, slice)):
+            x_array = self._x.get_array()
+            x_array[expr] = item
+        else:
+            raise KeyError("Key type {expr} not accepted")
+
+
 class Model:
     def __init__(self, module_name: str):
         """
@@ -345,7 +378,7 @@ class Model:
             tgt_expr,
             tgt_idx,
         ) in model.links:
-            self.link(name + "." + src_expr, src_idx, name + "." + tgt_expr, tgt_idx)
+            self.link(name + "." + src_expr, name + "." + tgt_expr, src_idx, tgt_idx)
 
         return
 
@@ -596,11 +629,19 @@ class Model:
             objs,
         )
 
+    def get_data_vector(self):
+        return ModelVector(self, self.problem.get_data_vector())
+
+    def create_vector(self):
+        return ModelVector(self, self.problem.create_vector())
+
     def get_opt_problem(self):
         """Retrieve the optimization problem"""
         return self.problem
 
-    def extract_submatrix(self, A, of: List[str], wrt: List[str]):
+    def extract_submatrix(
+        self, A: Union[CSRMat, spmatrix], of: List[str], wrt: List[str]
+    ):
         """
         Given the matrix A, find the sub-matrix A[indices[of], indices[wrt]]
         """
@@ -626,6 +667,24 @@ class Model:
         wrt_indices = np.concatenate(wrt_list)
 
         return A[of_indices, :][:, wrt_indices], of_dict, wrt_dict
+
+    def get_all_names(self):
+        """
+        Get the scoped names of all inputs, outputs and data within the model
+        """
+        inputs = []
+        outputs = []
+        data = []
+
+        for comp_name, comp in self.comp.items():
+            for name in comp.get_input_names():
+                inputs.append(".".join([comp_name, name]))
+            for name in comp.get_output_names():
+                outputs.append(".".join([comp_name, name]))
+            for name in comp.get_data_names():
+                data.append(".".join([comp_name, name]))
+
+        return inputs, outputs, data
 
     def get_values_from_meta(
         self, meta_name: str, x: Union[None, List, np.ndarray] = None
@@ -767,3 +826,96 @@ class Model:
             script_args=["build_ext", "--inplace"],
             include_dirs=[amigo_include, pybind11_include, a2d_include],
         )
+
+    def _build_tree_data(self, tree, name):
+        subtree = {
+            "name": name,
+        }
+
+        if name in self.comp:
+            subtree["name"] = name
+            subtree["class"] = self.comp[name].class_name
+
+            data = {}
+            for data_name in self.comp[name].get_data_names():
+                data[data_name] = self.comp[name].get_meta(data_name).todict()
+            subtree["data"] = data
+
+            inputs = {}
+            for input_name in self.comp[name].get_input_names():
+                inputs[input_name] = self.comp[name].get_meta(input_name).todict()
+            subtree["inputs"] = inputs
+
+            outputs = {}
+            for output_name in self.comp[name].get_output_names():
+                outputs[output_name] = self.comp[name].get_meta(output_name).todict()
+            subtree["outputs"] = outputs
+        else:
+            children = []
+            if "children" in tree:
+                for child in tree["children"]:
+                    children.append(
+                        self._build_tree_data(tree["children"][child], child)
+                    )
+            subtree["children"] = children
+
+        return subtree
+
+    def _build_tree(self):
+        tree = {"children": {}}
+        for name in self.comp.keys():
+            path = name.split(".")
+
+            current = tree
+            for index, part in enumerate(path):
+                part_name = ".".join(path[: index + 1])
+                if "children" not in current:
+                    current["children"] = {}
+
+                if part_name not in current["children"]:
+                    current["children"][part_name] = {}
+                current = current["children"][part_name]
+
+        tree_data = {"module_name": self.module_name}
+        children = []
+        for child in tree["children"]:
+            children.append(self._build_tree_data(tree["children"][child], child))
+        tree_data["children"] = children
+
+        return tree_data
+
+    def get_serializable_data(self):
+
+        # Create a model data dictionary
+        model_data = self._build_tree()
+
+        def _to_list(obj):
+            if obj is None:
+                return None
+            elif isinstance(obj, (int, np.integer)):
+                return int(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, list):
+                return obj  # Assuming it contains JSON-serializable elements
+            else:
+                raise TypeError(
+                    f"Object {obj} of type {type(obj).__name__} is not JSON serializable"
+                )
+
+        # Serialize the link data
+        links = []
+        for src_expr, src_idx, tgt_expr, tgt_idx in self.links:
+            spath, sslice = _parse_var_expr(src_expr)
+            tpath, tslice = _parse_var_expr(tgt_expr)
+            links.append(
+                {
+                    "src": (".".join(spath), str(sslice), _to_list(src_idx)),
+                    "tgt": (".".join(tpath), str(tslice), _to_list(tgt_idx)),
+                }
+            )
+
+        # Set the path names
+        model_data["links"] = links
+
+        return model_data
