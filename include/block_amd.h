@@ -2,6 +2,7 @@
 #define AMIGO_BLOCK_AMD_H
 
 #include <algorithm>
+#include <string>
 
 namespace amigo {
 
