@@ -12,7 +12,7 @@ typedef SSIZE_T ssize_t;
 #include "csr_matrix.h"
 #include "optimization_problem.h"
 #include "optimizer.h"
-#include "quasidef_cholesky.h"
+#include "sparse_cholesky.h"
 
 namespace py = pybind11;
 
@@ -226,6 +226,18 @@ PYBIND11_MODULE(amigo, mod) {
                          mat.nnz * sizeof(double));
              return data;
            })
+      .def("extract_submatrix",
+           [](const amigo::CSRMat<double> &self, py::array_t<int> rows,
+              py::array_t<int> cols) {
+             return self.extract_submatrix(rows.size(), rows.data(),
+                                           cols.size(), cols.data());
+           })
+      .def("extract_submatrix_values",
+           [](const amigo::CSRMat<double> &self, py::array_t<int> rows,
+              py::array_t<int> cols, amigo::CSRMat<double> &mat) {
+             self.extract_submatrix_values(rows.size(), rows.data(),
+                                           cols.size(), cols.data(), &mat);
+           })
       .def("gauss_seidel", &amigo::CSRMat<double>::gauss_seidel)
       .def("mult", &amigo::CSRMat<double>::mult)
       .def("add_diagonal", &amigo::CSRMat<double>::add_diagonal);
@@ -270,13 +282,12 @@ PYBIND11_MODULE(amigo, mod) {
         return py::make_tuple(counter, array);
       });
 
-  py::class_<amigo::QuasidefCholesky<double>,
-             std::shared_ptr<amigo::QuasidefCholesky<double>>>(
-      mod, "QuasidefCholesky")
-      .def(py::init<std::shared_ptr<amigo::Vector<double>>,
-                    std::shared_ptr<amigo::CSRMat<double>>>())
-      .def("factor", &amigo::QuasidefCholesky<double>::factor)
-      .def("solve", &amigo::QuasidefCholesky<double>::solve);
+  py::class_<amigo::SparseCholesky<double>,
+             std::shared_ptr<amigo::SparseCholesky<double>>>(mod,
+                                                             "SparseCholesky")
+      .def(py::init<std::shared_ptr<amigo::CSRMat<double>>>())
+      .def("factor", &amigo::SparseCholesky<double>::factor)
+      .def("solve", &amigo::SparseCholesky<double>::solve);
 
   py::class_<amigo::OptVector<double>,
              std::shared_ptr<amigo::OptVector<double>>>(mod, "OptVector")

@@ -1,5 +1,5 @@
-#ifndef AMIGO_QUASIDEF_CHOLESKY_H
-#define AMIGO_QUASIDEF_CHOLESKY_H
+#ifndef AMIGO_SPARSE_CHOLESKY_H
+#define AMIGO_SPARSE_CHOLESKY_H
 
 #include <complex>
 
@@ -158,11 +158,9 @@ void lapack_pptrf(const char *c, int *n, T *ap, int *info) {
  * @tparam T Typename for the computations
  */
 template <typename T>
-class QuasidefCholesky {
+class SparseCholesky {
  public:
-  QuasidefCholesky(std::shared_ptr<Vector<T>> diag,
-                   std::shared_ptr<CSRMat<T>> mat)
-      : diag(diag), mat(mat) {
+  SparseCholesky(std::shared_ptr<CSRMat<T>> mat) : mat(mat) {
     // Set the values
     size = mat->nrows;
 
@@ -232,7 +230,7 @@ class QuasidefCholesky {
     }
   }
 
-  ~QuasidefCholesky() {
+  ~SparseCholesky() {
     delete[] snode_size;
     delete[] var_to_snode;
     delete[] snode_to_first_var;
@@ -275,7 +273,7 @@ class QuasidefCholesky {
   */
   int factor() {
     // Set values from the matrix
-    set_values(diag->get_array(), mat->rowp, mat->cols, mat->data);
+    set_values(mat->rowp, mat->cols, mat->data);
 
     int rflag = 0;
     int *list = new int[num_snodes];  // List pointer
@@ -470,13 +468,11 @@ class QuasidefCholesky {
   /**
     Set the values into the matrix.
 
-    @param n The number of columns in the input
     @param Acolp Pointer into the columns
     @param Arows Row indices of the nonzero entries
     @param Avals The numerical values
   */
-  void set_values(const T diagonal[], const int Acolp[], const int Arows[],
-                  const T Avals[]) {
+  void set_values(const int Acolp[], const int Arows[], const T Avals[]) {
     std::fill(data, data + data_ptr[num_snodes], T(0.0));
 
     for (int j = 0; j < size; j++) {
@@ -500,9 +496,6 @@ class QuasidefCholesky {
 
               T *D = get_diag_pointer(sj);
               D[get_diag_index(ii, jj)] -= Avals[ip];
-              if (ii == jj) {
-                D[get_diag_index(ii, jj)] += diagonal[i];
-              }
             } else {
               int jj = j - jfirst;
 
@@ -525,9 +518,6 @@ class QuasidefCholesky {
 
               T *D = get_diag_pointer(sj);
               D[get_diag_index(ii, jj)] += Avals[ip];
-              if (ii == jj) {
-                D[get_diag_index(ii, jj)] += diagonal[i];
-              }
             } else {
               int jj = j - jfirst;
 
@@ -888,9 +878,6 @@ class QuasidefCholesky {
     return &data[data_ptr[i] + dsize];
   }
 
-  // The diagonal entries of the matrix D and C
-  std::shared_ptr<Vector<T>> diag;
-
   // The matrix
   std::shared_ptr<CSRMat<T>> mat;
 
@@ -938,4 +925,4 @@ class QuasidefCholesky {
 
 }  // namespace amigo
 
-#endif  // AMIGO_QUASIDEF_CHOLESKY_H
+#endif  // AMIGO_SPARSE_CHOLESKY_H
