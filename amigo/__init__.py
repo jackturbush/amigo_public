@@ -1,3 +1,10 @@
+import sys
+import os
+
+if sys.platform == "win32":
+    libopenblas_dll_dir = r"C:\libs\openblas\bin"
+    os.add_dll_directory(libopenblas_dll_dir)
+
 from .amigo import Vector, OptimizationProblem, QuasidefCholesky, OrderingType
 from .component import Component
 from .model import Model

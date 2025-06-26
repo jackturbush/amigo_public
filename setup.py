@@ -78,6 +78,10 @@ def get_extensions():
     define_macros = []
     if sys.platform == "win32":
         compile_args += ["/std:c++17", "/permissive-"]
+        openblas_root = r"C:\libs\openblas"
+        inc_dirs += [os.path.join(openblas_root, "include")]
+        lib_dirs += [os.path.join(openblas_root, "lib")]
+        libs += ["libopenblas"]
     elif sys.platform == "darwin":
         compile_args += ["-std=c++17"]
         define_macros += [("AMIGO_USE_METIS", "1")]
