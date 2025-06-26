@@ -10,6 +10,19 @@ template <typename T>
 class CSRMat {
  public:
   /**
+   * Create an empty CSRMat
+   */
+  CSRMat()
+      : nrows(0),
+        ncols(0),
+        nnz(0),
+        diag(nullptr),
+        rowp(nullptr),
+        cols(nullptr),
+        data(nullptr),
+        sqdef_index(-1) {}
+
+  /**
    * @brief Construct a new CSRMat object
    *
    * Build a general CSR-based data structure directly from the non-zero
@@ -29,12 +42,26 @@ class CSRMat {
       : nrows(nrows), ncols(ncols), nnz(nnz), sqdef_index(sqdef_index) {
     rowp = new int[nrows + 1];
     cols = new int[nnz];
+    diag = new int[nrows];
     std::copy(rowp_, rowp_ + (nrows + 1), rowp);
     std::copy(cols_, cols_ + nnz, cols);
 
     // Sort the column indices for later use
     for (int i = 0; i < nrows; i++) {
-      std::sort(&cols[rowp[i]], &cols[rowp[i + 1]]);
+      int size = rowp[i + 1] - rowp[i];
+      int* start = &cols[rowp[i]];
+      int* end = start + size;
+
+      // Sort the columns
+      std::sort(start, end);
+
+      // Set the diagonal elements of the matrix
+      auto* it = std::lower_bound(start, end, i);
+      if (it != end && *it == i) {
+        diag[i] = it - cols;
+      } else {
+        diag[i] = rowp[i];
+      }
     }
 
     data = new T[nnz];
@@ -74,17 +101,178 @@ class CSRMat {
     // Compute the number of non-zeros
     nnz = rowp[nrows];
 
+    diag = new int[nrows];
+    for (int i = 0; i < nrows; i++) {
+      int size = rowp[i + 1] - rowp[i];
+      int* start = &cols[rowp[i]];
+      int* end = start + size;
+
+      // Set the diagonal elements of the matrix
+      auto* it = std::lower_bound(start, end, i);
+      if (it != end && *it == i) {
+        diag[i] = it - cols;
+      } else {
+        diag[i] = -1;
+      }
+    }
+
     // Don't forget to allocate the space
     data = new T[nnz];
     std::fill(data, data + nnz, 0.0);
   }
   ~CSRMat() {
-    delete[] rowp;
-    delete[] cols;
-    delete[] data;
+    if (rowp) {
+      delete[] rowp;
+    }
+    if (cols) {
+      delete[] cols;
+    }
+    if (diag) {
+      delete[] diag;
+    }
+    if (data) {
+      delete[] data;
+    }
   }
 
   void zero() { std::fill(data, data + nnz, 0.0); }
+
+  /**
+   * @brief Extract a submatrix from the CSRMat class given the row and column
+   * indices
+   *
+   * @param nsubrows Number of rows in the extracted matrix
+   * @param subrows Rows of the submatrix (must be unique)
+   * @param nsubcols Number of columns in the extracted matrix
+   * @param subcols Columns of the submatrix (must be unique)
+   * @return The submatrix with its numerical values
+   */
+  CSRMat<T>* extract_submatrix(int nsubrows, const int subrows[], int nsubcols,
+                               const int subcols[]) const {
+    int* subcolptr = new int[ncols];
+    std::fill(subcolptr, subcolptr + nrows, -1);
+    for (int i = 0; i < nsubcols; i++) {
+      subcolptr[subcols[i]] = i;
+    }
+
+    // Count up the space for things
+    CSRMat<T>* mat = new CSRMat<T>();
+
+    mat->nrows = nsubrows;
+    mat->ncols = nsubcols;
+    mat->rowp = new int[nsubrows + 1];
+    mat->rowp[0] = 0;
+
+    for (int isub = 0; isub < nsubrows; isub++) {
+      int i = subrows[isub];
+
+      int count = 0;
+      for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
+        int j = cols[jp];
+        int jsub = subcolptr[j];
+        if (jsub >= 0) {
+          count++;
+        }
+      }
+
+      mat->rowp[isub + 1] = mat->rowp[isub] + count;
+    }
+
+    mat->nnz = mat->rowp[mat->nrows];
+    mat->diag = new int[mat->nrows];
+    mat->cols = new int[mat->nnz];
+
+    for (int isub = 0; isub < nsubrows; isub++) {
+      int i = subrows[isub];
+
+      int ptr = mat->rowp[isub];
+      for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
+        int j = cols[jp];
+        int jsub = subcolptr[j];
+        if (jsub >= 0) {
+          mat->cols[ptr] = jsub;
+          ptr++;
+        }
+      }
+
+      // Sort the column indices
+      int size = mat->rowp[isub + 1] - mat->rowp[isub];
+      int* start = &mat->cols[mat->rowp[isub]];
+      int* end = start + size;
+      std::sort(start, end);
+
+      // Set the diagonal elements of the matrix
+      auto* it = std::lower_bound(start, end, isub);
+      if (it != end && *it == isub) {
+        mat->diag[i] = it - mat->cols;
+      } else {
+        mat->diag[i] = -1;
+      }
+    }
+
+    delete[] subcolptr;
+
+    mat->data = new T[mat->nnz];
+    extract_submatrix_values(nsubrows, subrows, nsubcols, subcols, mat);
+
+    return mat;
+  }
+
+  /**
+   * @brief Extract the submatrix values
+   *
+   * @param nsubrows Number of rows in the extracted matrix
+   * @param subrows Rows of the submatrix (must be unique)
+   * @param nsubcols Number of columns in the extracted matrix
+   * @param subcols Columns of the submatrix (must be unique)
+   * @return The submatrix with its numerical values
+   */
+  void extract_submatrix_values(int nsubrows, const int subrows[], int nsubcols,
+                                const int subcols[], CSRMat<T>* mat) const {
+    std::fill(mat->data, mat->data + mat->nnz, T(0.0));
+
+    for (int isub = 0; isub < nsubrows; isub++) {
+      int i = subrows[isub];
+
+      // Find the size and end of the submatrix
+      int size = rowp[i + 1] - rowp[i];
+      const int* start = &cols[rowp[i]];
+      const int* end = start + size;
+
+      // Set the values into the submatrix
+      for (int jp = mat->rowp[isub]; jp < mat->rowp[isub + 1]; jp++) {
+        // Set things up to search for the rows
+        int jsub = mat->cols[jp];
+        int j = subcols[jsub];
+
+        auto* it = std::lower_bound(start, end, j);
+        if (it != end && *it == j) {
+          mat->data[jp] = data[it - cols];
+        }
+      }
+    }
+  }
+
+  /**
+   * @brief Perform an iteration of Gauss Seidel
+   *
+   * @param y The right-hand-side
+   * @param x The solution vector
+   */
+  void gauss_seidel(const std::shared_ptr<Vector<T>>& y,
+                    std::shared_ptr<Vector<T>>& x) const {
+    const T* y_array = y->get_array();
+    T* x_array = x->get_array();
+
+    for (int i = 0; i < nrows; i++) {
+      T val = y_array[i];
+      for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
+        val -= data[jp] * x_array[cols[jp]];
+      }
+
+      x_array[i] = x_array[i] + val / data[diag[i]];
+    }
+  }
 
   /**
    * @brief Add diagonal entries to the matrix
@@ -94,12 +282,8 @@ class CSRMat {
   void add_diagonal(const std::shared_ptr<Vector<T>>& x) {
     const T* x_array = x->get_array();
     for (int row = 0; row < nrows; row++) {
-      int size = rowp[row + 1] - rowp[row];
-      int* start = &cols[rowp[row]];
-      int* end = start + size;
-      auto* it = std::lower_bound(start, end, row);
-      if (it != end && *it == row) {
-        data[it - cols] += x_array[row];
+      if (diag[row] != -1) {
+        data[diag[row]] += x_array[row];
       }
     }
   }
@@ -150,6 +334,7 @@ class CSRMat {
   int nrows;  // Number of rows in the matrix
   int ncols;  // Number of columns in the matrix
   int nnz;    // Number of non-zeros in the matrix
+  int* diag;  // The diagonal entry
   int* rowp;  // Pointer into the column array
   int* cols;  // Column indices
   T* data;    // Matrix values

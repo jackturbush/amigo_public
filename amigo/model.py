@@ -1,9 +1,7 @@
 import numpy as np
 import ast
 import sys
-import os
 import importlib
-import inspect
 from .amigo import (
     OrderingType,
     reorder_model,
@@ -639,6 +637,30 @@ class Model:
         """Retrieve the optimization problem"""
         return self.problem
 
+    def get_indices_from_list(self, names: List[str]):
+        """
+        Given a list of variable names, create a concatenated list of indices and a mapping between
+        the names and indices.
+
+        Args:
+            names (list(str)): List of strings containing the names names
+
+        Returns:
+            indices (np.ndarray): Concatenated array of the indices
+            idx_dict (dict): Name -> new index mapping
+        """
+        idx_list = []
+        idx_dict = {}
+        idx_count = 0
+        for name in of:
+            idx = self.get_indices(name).ravel()
+            idx_list.append(idx)
+            idx_dict[name] = np.arange(idx_count, idx_count + idx.size, dtype=int)
+            idx_count += idx.size
+        indices = np.concatenate(of_list)
+
+        return indices, idx_dict
+
     def extract_submatrix(
         self, A: Union[CSRMat, spmatrix], of: List[str], wrt: List[str]
     ):
@@ -646,27 +668,15 @@ class Model:
         Given the matrix A, find the sub-matrix A[indices[of], indices[wrt]]
         """
 
-        of_list = []
-        of_dict = {}
-        of_count = 0
-        for name in of:
-            idx = self.get_indices(name).ravel()
-            of_list.append(idx)
-            of_dict[name] = np.arange(of_count, of_count + idx.size)
-            of_count += idx.size
-        of_indices = np.concatenate(of_list)
+        of_indices, of_dict = self.get_indices_from_list(of)
+        wrt_indices, wrt_dict = self.get_indices_from_list(wrt)
 
-        wrt_list = []
-        wrt_dict = {}
-        wrt_count = 0
-        for name in wrt:
-            idx = self.get_indices(name).ravel()
-            wrt_list.append(idx)
-            wrt_dict[name] = np.arange(wrt_count, wrt_count + idx.size)
-            wrt_count += idx.size
-        wrt_indices = np.concatenate(wrt_list)
+        if isinstance(A, spmatrix):
+            Asub = A[of_indices, :][:, wrt_indices]
+        elif isinstance(A, CSRMat):
+            Asub = A.extract_submatrix(of_indices, wrt_indices)
 
-        return A[of_indices, :][:, wrt_indices], of_dict, wrt_dict
+        return Asub, of_dict, wrt_dict
 
     def get_all_names(self):
         """
