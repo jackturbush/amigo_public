@@ -107,10 +107,10 @@ class Helmholtz(am.Component):
         Nx = self.vars["Nx"]
         Ny = self.vars["Ny"]
 
-        x0    =self.vars["x0"] = dot(N, x)
-        rho0  =self.vars["rho0"] = dot(N, rho)
-        rho_x =self.vars["rho_x"] = dot(Nx, rho)
-        rho_y =self.vars["rho_y"] = dot(Ny, rho)
+        x0 = self.vars["x0"] = dot(N, x)
+        rho0 = self.vars["rho0"] = dot(N, rho)
+        rho_x = self.vars["rho_x"] = dot(Nx, rho)
+        rho_y = self.vars["rho_y"] = dot(Ny, rho)
 
         self.constraints["rho_res"] = [
             detJ * (N[0] * (rho0 - x0) + r * r * (Nx[0] * rho_x + Ny[0] * rho_y)),
