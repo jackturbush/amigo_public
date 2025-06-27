@@ -1,0 +1,12 @@
+# Ignore the auto-generated file
+include/amigo_include_paths.h
+
+/build/*
+
+# Ignore in examples/ and all its subdirectories
+/examples/**/*.h
+/examples/**/*.cpp
+/examples/**/*.so
+/examples/**/*.png
+/examples/**/*.svg
+/examples/**/*.json
