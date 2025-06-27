@@ -66,12 +66,8 @@ class CartComponent(am.Component):
         qdot = self.inputs["qdot"]
 
         # Compute the declared variable values
-        self.vars["sint"] = am.sin(q[1])
-        self.vars["cost"] = am.cos(q[1])
-
-        # Extract a reference to the variable values
-        sint = self.vars["sint"]
-        cost = self.vars["cost"]
+        sint = self.vars["sint"] = am.sin(q[1])
+        cost = self.vars["cost"] = am.cos(q[1])
 
         res = 4 * [None]
         res[0] = q[2] - qdot[0]

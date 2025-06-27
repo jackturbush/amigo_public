@@ -44,21 +44,20 @@ def compute_shape_derivs(xi, eta, X, Y, vars):
     x_xi, x_ea, y_xi, y_ea = compute_detJ(xi, eta, X, Y, vars)
     detJ = vars["detJ"]
 
-    vars["invJ"] = [[y_ea / detJ, -x_ea / detJ], [-y_xi / detJ, x_xi / detJ]]
-    invJ = vars["invJ"]
+    invJ = vars["invJ"] = [[y_ea / detJ, -x_ea / detJ], [-y_xi / detJ, x_xi / detJ]]
 
     vars["Nx"] = [
-        invJ[0, 0] * N_xi[0] + invJ[1, 0] * N_ea[0],
-        invJ[0, 0] * N_xi[1] + invJ[1, 0] * N_ea[1],
-        invJ[0, 0] * N_xi[2] + invJ[1, 0] * N_ea[2],
-        invJ[0, 0] * N_xi[3] + invJ[1, 0] * N_ea[3],
+        invJ[0][0] * N_xi[0] + invJ[1][0] * N_ea[0],
+        invJ[0][0] * N_xi[1] + invJ[1][0] * N_ea[1],
+        invJ[0][0] * N_xi[2] + invJ[1][0] * N_ea[2],
+        invJ[0][0] * N_xi[3] + invJ[1][0] * N_ea[3],
     ]
 
     vars["Ny"] = [
-        invJ[0, 1] * N_xi[0] + invJ[1, 1] * N_ea[0],
-        invJ[0, 1] * N_xi[1] + invJ[1, 1] * N_ea[1],
-        invJ[0, 1] * N_xi[2] + invJ[1, 1] * N_ea[2],
-        invJ[0, 1] * N_xi[3] + invJ[1, 1] * N_ea[3],
+        invJ[0][1] * N_xi[0] + invJ[1][1] * N_ea[0],
+        invJ[0][1] * N_xi[1] + invJ[1][1] * N_ea[1],
+        invJ[0][1] * N_xi[2] + invJ[1][1] * N_ea[2],
+        invJ[0][1] * N_xi[3] + invJ[1][1] * N_ea[3],
     ]
 
     return N, N_xi, N_ea
@@ -104,20 +103,14 @@ class Helmholtz(am.Component):
 
         N, N_xi, N_ea = compute_shape_derivs(xi, eta, X, Y, self.vars)
 
+        detJ = self.vars["detJ"]
         Nx = self.vars["Nx"]
         Ny = self.vars["Ny"]
 
-        self.vars["x0"] = dot(N, x)
-        self.vars["rho0"] = dot(N, rho)
-        self.vars["rho_x"] = dot(Nx, rho)
-        self.vars["rho_y"] = dot(Ny, rho)
-
-        x0 = self.vars["x0"]
-        rho0 = self.vars["rho0"]
-        rho_x = self.vars["rho_x"]
-        rho_y = self.vars["rho_y"]
-
-        detJ = self.vars["detJ"]
+        x0 = self.vars["x0"] = dot(N, x)
+        rho0 = self.vars["rho0"] = dot(N, rho)
+        rho_x = self.vars["rho_x"] = dot(Nx, rho)
+        rho_y = self.vars["rho_y"] = dot(Ny, rho)
 
         self.constraints["rho_res"] = [
             detJ * (N[0] * (rho0 - x0) + r * r * (Nx[0] * rho_x + Ny[0] * rho_y)),
@@ -184,32 +177,28 @@ class Topology(am.Component):
         compute_shape_derivs(xi, eta, X, Y, self.vars)
 
         # Set the values of the derivatives of the shape functions
+        detJ = self.vars["detJ"]
         Nx = self.vars["Nx"]
         Ny = self.vars["Ny"]
 
         rho0 = 0.25 * (rho[0] + rho[1] + rho[2] + rho[3])
         # self.vars["E0"] = E * (rho0**p + kappa)
-        self.vars["E0"] = E * (rho0 + kappa)
-        E0 = self.vars["E0"]
+        E0 = self.vars["E0"] = E * (rho0 + kappa)
 
-        self.vars["Ux"] = [[dot(Nx, u), dot(Ny, u)], [dot(Nx, v), dot(Ny, v)]]
-        Ux = self.vars["Ux"]
+        Ux = self.vars["Ux"] = [[dot(Nx, u), dot(Ny, u)], [dot(Nx, v), dot(Ny, v)]]
 
-        self.vars["e"] = [
-            Ux[0, 0],
-            Ux[1, 1],
-            (Ux[0, 1] + Ux[1, 0]),
+        e = self.vars["e"] = [
+            Ux[0][0],
+            Ux[1][1],
+            (Ux[0][1] + Ux[1][0]),
         ]
-        e = self.vars["e"]
 
-        self.vars["s"] = [
+        s = self.vars["s"] = [
             E0 / (1.0 - nu * nu) * (e[0] + nu * e[1]),
             E0 / (1.0 - nu * nu) * (e[1] + nu * e[0]),
             0.5 * E0 / (1.0 + nu) * e[2],
         ]
-        s = self.vars["s"]
 
-        detJ = self.vars["detJ"]
         self.constraints["u_res"] = [
             detJ * (Nx[0] * s[0] + Ny[0] * s[2]),
             detJ * (Nx[1] * s[0] + Ny[1] * s[2]),
@@ -360,9 +349,6 @@ parser.add_argument(
     help="Show the sparsity pattern",
 )
 args = parser.parse_args()
-
-# nx = 128
-# ny = 64
 
 nx = 64
 ny = 32
