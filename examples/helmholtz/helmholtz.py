@@ -45,21 +45,20 @@ def compute_shape_derivs(xi, eta, X, Y, vars):
     x_xi, x_ea, y_xi, y_ea = compute_detJ(xi, eta, X, Y, vars)
     detJ = vars["detJ"]
 
-    vars["invJ"] = [[y_ea / detJ, -x_ea / detJ], [-y_xi / detJ, x_xi / detJ]]
-    invJ = vars["invJ"]
+    invJ = vars["invJ"] = [[y_ea / detJ, -x_ea / detJ], [-y_xi / detJ, x_xi / detJ]]
 
     vars["Nx"] = [
-        invJ[0, 0] * N_xi[0] + invJ[1, 0] * N_ea[0],
-        invJ[0, 0] * N_xi[1] + invJ[1, 0] * N_ea[1],
-        invJ[0, 0] * N_xi[2] + invJ[1, 0] * N_ea[2],
-        invJ[0, 0] * N_xi[3] + invJ[1, 0] * N_ea[3],
+        invJ[0][0] * N_xi[0] + invJ[1][0] * N_ea[0],
+        invJ[0][0] * N_xi[1] + invJ[1][0] * N_ea[1],
+        invJ[0][0] * N_xi[2] + invJ[1][0] * N_ea[2],
+        invJ[0][0] * N_xi[3] + invJ[1][0] * N_ea[3],
     ]
 
     vars["Ny"] = [
-        invJ[0, 1] * N_xi[0] + invJ[1, 1] * N_ea[0],
-        invJ[0, 1] * N_xi[1] + invJ[1, 1] * N_ea[1],
-        invJ[0, 1] * N_xi[2] + invJ[1, 1] * N_ea[2],
-        invJ[0, 1] * N_xi[3] + invJ[1, 1] * N_ea[3],
+        invJ[0][1] * N_xi[0] + invJ[1][1] * N_ea[0],
+        invJ[0][1] * N_xi[1] + invJ[1][1] * N_ea[1],
+        invJ[0][1] * N_xi[2] + invJ[1][1] * N_ea[2],
+        invJ[0][1] * N_xi[3] + invJ[1][1] * N_ea[3],
     ]
 
     return N, N_xi, N_ea
@@ -103,23 +102,16 @@ class Helmholtz(am.Component):
 
         N, N_xi, N_ea = compute_shape_derivs(xi, eta, X, Y, self.vars)
 
+        detJ = self.vars["detJ"]
         Nx = self.vars["Nx"]
         Ny = self.vars["Ny"]
 
-        self.vars["x"] = dot(N, X)
-        self.vars["y"] = dot(N, Y)
+        x = self.vars["x"] = dot(N, X)
+        y = self.vars["y"] = dot(N, Y)
 
-        self.vars["rho0"] = dot(N, rho)
-        self.vars["rho_x"] = dot(Nx, rho)
-        self.vars["rho_y"] = dot(Ny, rho)
-
-        x = self.vars["x"]
-        y = self.vars["y"]
-        rho0 = self.vars["rho0"]
-        rho_x = self.vars["rho_x"]
-        rho_y = self.vars["rho_y"]
-
-        detJ = self.vars["detJ"]
+        rho0 = self.vars["rho0"] = dot(N, rho)
+        rho_x = self.vars["rho_x"] = dot(Nx, rho)
+        rho_y = self.vars["rho_y"] = dot(Ny, rho)
 
         rhs = 1.0 - (x - 1) ** 2 + (y - 1) ** 2
         laplace = r * r * (rho_x * rho_x + rho_y * rho_y)
@@ -139,9 +131,6 @@ class NodeSource(am.Component):
         self.add_data("y_coord")
 
         self.empty = True
-
-    def compute(self):
-        pass
 
 
 parser = argparse.ArgumentParser()

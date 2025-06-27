@@ -375,14 +375,14 @@ class VarSet:
         return iter(self.vars)
 
     def __getitem__(self, name):
-        return Expr(self.vars[name].var)
+        return self.vars[name].expr
 
     def __setitem__(self, name, expr):
         if isinstance(expr, Expr):
             shape = None
             self.vars[name] = self.VarExpr(name, shape=shape, active=expr.active)
             self.vars[name].expr = expr
-            expr.node.name = name
+            expr.name = name
         else:
             shape = _get_shape_from_list(expr)
             self.vars[name] = self.VarExpr(name, shape=shape, active=True)
@@ -393,11 +393,13 @@ class VarSet:
                 for i in range(shape[0]):
                     self.vars[name].expr[i] = expr[i]
                     active = active or expr[i].active
+                    expr[i].name = f"{name}[{i}]"
             elif len(shape) == 2:
                 for i in range(shape[0]):
                     for j in range(shape[1]):
                         self.vars[name].expr[i][j] = expr[i][j]
                         active = active or expr[i][j].active
+                        expr[i][j].name = f"{name}({i}, {j})"
 
             self.vars[name].active = active
             self.vars[name].var.active = active
@@ -425,16 +427,18 @@ class VarSet:
             if not self.vars[name].active:
                 shape = _normalize_shape(self.vars[name].shape)
                 if shape is None:
-                    rhs = self.vars[name].expr.generate_cpp()
+                    rhs = self.vars[name].expr.generate_cpp(use_vars=False)
                     lines.append(f"{name} = {rhs}")
                 elif len(shape) == 1:
                     for i in range(shape[0]):
-                        rhs = self.vars[name].expr[i].generate_cpp()
+                        rhs = self.vars[name].expr[i].generate_cpp(use_vars=False)
                         lines.append(f"{name}[{i}] = {rhs}")
                 elif len(shape) == 2:
                     for j in range(shape[1]):
                         for i in range(shape[0]):
-                            rhs = self.vars[name].expr[i][j].generate_cpp()
+                            rhs = (
+                                self.vars[name].expr[i][j].generate_cpp(use_vars=False)
+                            )
                             lines.append(f"{name}({i},{j}) = {rhs}")
 
         return lines
@@ -447,32 +451,40 @@ class VarSet:
                 if self.vars[name].active:
                     shape = _normalize_shape(self.vars[name].shape)
                     if shape is None:
-                        rhs = self.vars[name].expr.generate_cpp()
+                        rhs = self.vars[name].expr.generate_cpp(use_vars=False)
                         lines.append(f"{name} = {rhs}")
                     elif len(shape) == 1:
                         for i in range(shape[0]):
-                            rhs = self.vars[name].expr[i].generate_cpp()
+                            rhs = self.vars[name].expr[i].generate_cpp(use_vars=False)
                             lines.append(f"{name}[{i}] = {rhs}")
                     elif len(shape) == 2:
                         for j in range(shape[1]):
                             for i in range(shape[0]):
-                                rhs = self.vars[name].expr[i][j].generate_cpp()
+                                rhs = (
+                                    self.vars[name]
+                                    .expr[i][j]
+                                    .generate_cpp(use_vars=False)
+                                )
                                 lines.append(f"{name}({i},{j}) = {rhs}")
         else:
             for name in self.vars:
                 if self.vars[name].active:
                     shape = _normalize_shape(self.vars[name].shape)
                     if shape is None:
-                        rhs = self.vars[name].expr.generate_cpp()
+                        rhs = self.vars[name].expr.generate_cpp(use_vars=False)
                         lines.append(f"A2D::Eval({rhs}, {name})")
                     elif len(shape) == 1:
                         for i in range(shape[0]):
-                            rhs = self.vars[name].expr[i].generate_cpp()
+                            rhs = self.vars[name].expr[i].generate_cpp(use_vars=False)
                             lines.append(f"A2D::Eval({rhs}, {name}[{i}])")
                     elif len(shape) == 2:
                         for j in range(shape[1]):
                             for i in range(shape[0]):
-                                rhs = self.vars[name].expr[i][j].generate_cpp()
+                                rhs = (
+                                    self.vars[name]
+                                    .expr[i][j]
+                                    .generate_cpp(use_vars=False)
+                                )
                                 lines.append(f"A2D::Eval({rhs}, {name}({i},{j}))")
         return lines
 

@@ -1,7 +1,9 @@
 # Ignore the auto-generated file
 include/amigo_include_paths.h
 
+# Ignore anything in the build directory
 /build/*
+*.so
 
 # Ignore in examples/ and all its subdirectories
 /examples/**/*.h
