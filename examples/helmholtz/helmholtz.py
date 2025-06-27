@@ -130,8 +130,6 @@ class NodeSource(am.Component):
         self.add_data("x_coord")
         self.add_data("y_coord")
 
-        self.empty = True
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
