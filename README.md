@@ -90,12 +90,8 @@ class CartComponent(am.Component):
         qdot = self.inputs["qdot"]
 
         # Compute intermediate variables
-        self.vars["sint"] = am.sin(q[1])
-        self.vars["cost"] = am.cos(q[1])
-
-        # Extract a reference to the variables (this is required to use these variables)
-        sint = self.vars["sint"]
-        cost = self.vars["cost"]
+        sint = self.vars["sint"] = am.sin(q[1])
+        cost = self.vars["cost"] = am.cos(q[1])
 
         # Compute the residual
         res = 4 * [None]
