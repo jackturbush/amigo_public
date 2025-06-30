@@ -790,11 +790,17 @@ class OutputSet:
     def __len__(self):
         return len(self.outputs)
 
+    def __iter__(self):
+        return iter(self.outputs)
+
     def __setitem__(self, name, expr):
         if name not in self.outputs:
             raise KeyError(f"{name} not the declared outputs")
         self.outputs[name].expr = expr
         return
+
+    def get_shape(self, name):
+        return self.outputs[name].shape
 
     def clear(self):
         for name in self.outputs:
@@ -941,6 +947,12 @@ class Component:
             cons.append(name)
         return cons
 
+    def get_output_names(self):
+        outs = []
+        for name in self.outputs:
+            outs.append(name)
+        return outs
+
     def get_data_names(self):
         data = []
         for name in self.data:
@@ -967,10 +979,18 @@ class Component:
 
         return data_shapes
 
-    def _get_using_statement(self, name="input", template_name="T__"):
+    def get_output_shapes(self):
+        out_shapes = {}
+        for name in self.outputs:
+            shape = self.outputs.get_shape(name)
+            out_shapes[name] = shape
+        return out_shapes
+
+    def _get_using_statement(self, name="input", template_name="R__"):
         # Generate the using statement
         if name == "input":
-            using = f"using Input = A2D::VarTuple<{template_name}"
+            using = f"template <typename {template_name}> "
+            using += f"using Input = A2D::VarTuple<{template_name}"
 
             input = self.inputs.generate_cpp_types(template_name=template_name)
             cons = self.constraints.generate_cpp_types(template_name=template_name)
@@ -980,20 +1000,19 @@ class Component:
             for val in cons:
                 using += f", {val}"
             using += ">"
-
         elif name == "data":
-            using = f"using Data = A2D::VarTuple<{template_name}"
+            using = f"template <typename {template_name}> "
+            using += f"using Data = A2D::VarTuple<{template_name}"
 
             data = self.data.generate_cpp_types(template_name=template_name)
-
             for val in data:
                 using += f", {val}"
             using += ">"
         elif name == "output":
-            using = f"using Output = A2D::VarTuple<{template_name}"
+            using = f"template <typename {template_name}> "
+            using += f"using Output = A2D::VarTuple<{template_name}"
 
             output = self.outputs.generate_cpp_types(template_name=template_name)
-
             for val in output:
                 using += f", {val}"
             using += ">"
@@ -1003,6 +1022,7 @@ class Component:
     def generate_cpp(
         self,
         template_name="T__",
+        using_template="R__",
         data_name="data__",
         input_name="input__",
         grad_name="boutput__",
@@ -1042,30 +1062,38 @@ class Component:
                 cpp += "  " + line + ";\n"
 
             # Add the input statement
-            if len(self.inputs) > 0:
+            if len(self.inputs) + len(self.constraints) > 0:
                 using = self._get_using_statement(
-                    name="input", template_name=template_name
+                    name="input", template_name=using_template
                 )
                 cpp += "  " + using + ";\n"
-                cpp += "  " + "static constexpr int ncomp = Input::ncomp;\n"
+                cpp += (
+                    "  "
+                    + f"static constexpr int ncomp = Input<{template_name}>::ncomp;\n"
+                )
             else:
                 cpp += (
                     "  "
-                    + f"using Input = typename A2D::VarTuple<{template_name}, {template_name}>;\n"
+                    + f"template <typename {using_template}> using Input = "
+                    + f"typename A2D::VarTuple<{using_template}, {using_template}>;\n"
                 )
                 cpp += "  " + "static constexpr int ncomp = 0;\n"
 
             # Add the data statement
             if len(self.data) > 0:
                 using = self._get_using_statement(
-                    name="data", template_name=template_name
+                    name="data", template_name=using_template
                 )
                 cpp += "  " + using + ";\n"
-                cpp += "  " + "static constexpr int ndata = Data::ncomp;\n"
+                cpp += (
+                    "  "
+                    + f"static constexpr int ndata = Data<{template_name}>::ncomp;\n"
+                )
             else:
                 cpp += (
                     "  "
-                    + f"using Data = typename A2D::VarTuple<{template_name}, {template_name}>;\n"
+                    + f"template <typename {using_template}> using Data = "
+                    + f"typename A2D::VarTuple<{using_template}, {using_template}>;\n"
                 )
                 cpp += "  " + "static constexpr int ndata = 0;\n"
 
@@ -1098,14 +1126,18 @@ class Component:
             # Add the output statement
             if len(self.outputs) > 0:
                 using = self._get_using_statement(
-                    name="output", template_name=template_name
+                    name="output", template_name=using_template
                 )
                 cpp += "  " + using + ";\n"
-                cpp += "  " + "static constexpr int noutputs = Output::ncomp;\n"
+                cpp += (
+                    "  "
+                    + f"static constexpr int noutputs = Output<{template_name}>::ncomp;\n"
+                )
             else:
                 cpp += (
                     "  "
-                    + f"using Output = typename A2D::VarTuple<{template_name}, {template_name}>;\n"
+                    + f"template<typename {using_template}> "
+                    + f"using Output = typename A2D::VarTuple<{using_template}, {using_template}>;\n"
                 )
                 cpp += "  " + "static constexpr int noutputs = 0;\n"
 
@@ -1138,18 +1170,22 @@ class Component:
         pre = "  AMIGO_HOST_DEVICE static"
         if mode == "eval":
             cpp += (
-                f"{pre} {template_name} lagrange(Data& {data_name}, Input& {input_name})"
+                f"{pre} {template_name} lagrange(Data<{template_name}>& {data_name}, "
+                + f"Input<{template_name}>& {input_name})"
                 + " {\n"
             )
         elif mode == "rev":
             cpp += (
-                f"{pre} void gradient(Data& {data_name}, Input& {input_name}, Input& {grad_name})"
+                f"{pre} void gradient(Data<{template_name}>& {data_name}, "
+                + f"Input<{template_name}>& {input_name}, Input<{template_name}>& {grad_name})"
                 + " {\n"
             )
         elif mode == "hprod":
             cpp += (
-                f"{pre} void hessian(Data& {data_name}, Input& {input_name}, Input& {prod_name}, "
-                f"Input& {grad_name}, Input& {hprod_name})" + " {\n"
+                f"{pre} void hessian(Data<{template_name}>& {data_name}, "
+                f"Input<{template_name}>& {input_name}, Input<{template_name}>& {prod_name}, "
+                f"Input<{template_name}>& {grad_name}, Input<{template_name}>& {hprod_name})"
+                + " {\n"
             )
 
         data_decl = self.data.generate_cpp_input_decl(
@@ -1225,16 +1261,18 @@ class Component:
 
     def _generate_analyze_cpp(
         self,
-        template_name="T__",
+        template_name="R__",
         data_name="data__",
         input_name="input__",
         output_name="output__",
     ):
         cpp = ""
 
+        cpp += "  " + f"template <typename {template_name}>\n"
         pre = "  " + "AMIGO_HOST_DEVICE static"
         cpp += (
-            f"{pre} void analyze(Data& {data_name}, Input& {input_name}, Output& {output_name})"
+            f"{pre} void analyze(Data<{template_name}>& {data_name}, Input<{template_name}>& {input_name}, "
+            + f"Output<{template_name}>& {output_name})"
             + " {\n"
         )
         data_decl = self.data.generate_cpp_input_decl(

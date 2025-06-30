@@ -154,6 +154,8 @@ class ComponentGroup:
         index_pool: GlobalIndexPool,
         data_shapes: dict,
         data_index_pool: GlobalIndexPool,
+        out_shapes: dict,
+        out_index_pool: GlobalIndexPool,
     ):
         self.name = name
         self.size = size
@@ -169,6 +171,11 @@ class ComponentGroup:
         self.data = {}
         for data_name, shape in data_shapes.items():
             self.data[data_name] = data_index_pool.allocate(shape)
+
+        # Set up the outputs
+        self.outputs = {}
+        for out_name, shape in out_shapes.items():
+            self.outputs[out_name] = out_index_pool.allocate(shape)
 
     def get_input_names(self):
         return self.comp_obj.get_input_names()
@@ -196,6 +203,8 @@ class ComponentGroup:
             return self.comp_obj.objective.get_meta(name)
         elif name in self.comp_obj.constants:
             return self.comp_obj.constants.get_meta(name)
+        elif name in self.comp_obj.outputs:
+            return self.comp_obj.outputs.get_meta(name)
         else:
             raise ValueError(
                 f"No input, constraint, data, objective or constant for {self.class_name}.{name}"
@@ -292,12 +301,9 @@ class Model:
         self.comp = {}
         self.index_pool = GlobalIndexPool()
         self.data_index_pool = GlobalIndexPool()
+        self.output_index_pool = GlobalIndexPool()
         self.links = []
         self._initialized = False
-
-        self.input_names = {}
-        self.constraint_names = {}
-        self.data_names = {}
 
     def _get_group_shapes(self, size: int, var_shapes: dict):
         for var_name in var_shapes:
@@ -330,6 +336,8 @@ class Model:
         var_shapes = self._get_group_shapes(size, vs)
         ds = comp_obj.get_data_shapes()
         data_shapes = self._get_group_shapes(size, ds)
+        ts = comp_obj.get_output_shapes()
+        out_shapes = self._get_group_shapes(size, ts)
 
         self.comp[name] = ComponentGroup(
             name,
@@ -339,6 +347,8 @@ class Model:
             self.index_pool,
             data_shapes,
             self.data_index_pool,
+            out_shapes,
+            self.output_index_pool,
         )
 
         return

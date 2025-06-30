@@ -389,17 +389,17 @@ using DefaultGroupBackend =
     SerialGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
 #endif
 
-template <class... Ts>
+template <typename R, class... Ts>
 struct __get_collection_input_type;
 
-template <class T>
-struct __get_collection_input_type<T> {
-  using Input = typename T::Input;
+template <typename R, class T>
+struct __get_collection_input_type<R, T> {
+  using Input = typename T::template Input<R>;
 };
 
-template <class T, class... Ts>
-struct __get_collection_input_type<T, Ts...> {
-  using Input = typename __get_collection_input_type<Ts...>::Input;
+template <typename R, class T, class... Ts>
+struct __get_collection_input_type<R, T, Ts...> {
+  using Input = typename __get_collection_input_type<R, Ts...>::Input;
 };
 
 template <class... Ts>
@@ -415,17 +415,17 @@ struct __get_collection_ncomp<T, Ts...> {
   static constexpr int value = __get_collection_ncomp<Ts...>::value;
 };
 
-template <class... Ts>
+template <typename R, class... Ts>
 struct __get_collection_data_type;
 
-template <class T>
-struct __get_collection_data_type<T> {
-  using Data = typename T::Data;
+template <typename R, class T>
+struct __get_collection_data_type<R, T> {
+  using Data = typename T::template Data<R>;
 };
 
-template <class T, class... Ts>
-struct __get_collection_data_type<T, Ts...> {
-  using Data = typename __get_collection_data_type<Ts...>::Data;
+template <typename R, class T, class... Ts>
+struct __get_collection_data_type<R, T, Ts...> {
+  using Data = typename __get_collection_data_type<R, Ts...>::Data;
 };
 
 template <class... Ts>
@@ -446,8 +446,8 @@ class ComponentGroup : public ComponentGroupBase<T> {
  public:
   static constexpr int num_components = sizeof...(Components);
 
-  using Input = typename __get_collection_input_type<Components...>::Input;
-  using Data = typename __get_collection_data_type<Components...>::Data;
+  using Input = typename __get_collection_input_type<T, Components...>::Input;
+  using Data = typename __get_collection_data_type<T, Components...>::Data;
 
   static constexpr int ncomp = __get_collection_ncomp<Components...>::value;
   static constexpr int ndata = __get_collection_ndata<Components...>::value;
