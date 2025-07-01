@@ -389,58 +389,6 @@ using DefaultGroupBackend =
     SerialGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
 #endif
 
-template <typename R, class... Ts>
-struct __get_collection_input_type;
-
-template <typename R, class T>
-struct __get_collection_input_type<R, T> {
-  using Input = typename T::template Input<R>;
-};
-
-template <typename R, class T, class... Ts>
-struct __get_collection_input_type<R, T, Ts...> {
-  using Input = typename __get_collection_input_type<R, Ts...>::Input;
-};
-
-template <class... Ts>
-struct __get_collection_ncomp;
-
-template <class T>
-struct __get_collection_ncomp<T> {
-  static constexpr int value = T::ncomp;
-};
-
-template <class T, class... Ts>
-struct __get_collection_ncomp<T, Ts...> {
-  static constexpr int value = __get_collection_ncomp<Ts...>::value;
-};
-
-template <typename R, class... Ts>
-struct __get_collection_data_type;
-
-template <typename R, class T>
-struct __get_collection_data_type<R, T> {
-  using Data = typename T::template Data<R>;
-};
-
-template <typename R, class T, class... Ts>
-struct __get_collection_data_type<R, T, Ts...> {
-  using Data = typename __get_collection_data_type<R, Ts...>::Data;
-};
-
-template <class... Ts>
-struct __get_collection_ndata;
-
-template <class T>
-struct __get_collection_ndata<T> {
-  static constexpr int value = T::ndata;
-};
-
-template <class T, class... Ts>
-struct __get_collection_ndata<T, Ts...> {
-  static constexpr int value = __get_collection_ndata<Ts...>::value;
-};
-
 template <typename T, class... Components>
 class ComponentGroup : public ComponentGroupBase<T> {
  public:
