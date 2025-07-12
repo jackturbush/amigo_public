@@ -68,6 +68,66 @@ class OrderingUtils {
   }
 
   /**
+   * Compute an element partition given the connectivity
+   *
+   * @tparam Functor Class type for the functor
+   * @param nnodes Number of nodes
+   * @param nelems Number of elements
+   * @param element_nodes Functor returning the number of nodes and node numbers
+   * @param part_size Partition size
+   * @param partition_ New array of length = nelems with paritition assignments
+   */
+  template <class Functor>
+  void partition(int nnodes, int nelems, const Functor &element_nodes,
+                 int part_size, int *partition_[]) {
+    // Create a pointer from the nodes back to the elements
+    int *elem_to_elem_ptr, *elem_to_elem;
+    build_element_to_element(nnodes, nelems, element_nodes, &elem_to_elem_ptr,
+                             &elem_to_elem);
+
+    int *partition = new int[nelems];
+
+#ifdef AMIGO_USE_METIS
+    if (part_size > 1) {
+      // Partition via METIS
+      int ncon = 1;  // "It should be at least 1"??
+
+      // Set the default options
+      int options[METIS_NOPTIONS];
+      METIS_SetDefaultOptions(options);
+
+      // Use 0-based numbering
+      options[METIS_OPTION_NUMBERING] = 0;
+
+      // The objective value in METIS
+      int objval = 0;
+
+      if (part_size < 8) {
+        METIS_PartGraphRecursive(&nelems, &ncon, elem_to_elem_ptr, elem_to_elem,
+                                 NULL, NULL, NULL, &part_size, NULL, NULL,
+                                 options, &objval, partition);
+      } else {
+        METIS_PartGraphKway(&nelems, &ncon, elem_to_elem_ptr, elem_to_elem,
+                            NULL, NULL, NULL, &part_size, NULL, NULL, options,
+                            &objval, partition);
+      }
+    } else {
+      for (int i = 0; i < nelems; i++) {
+        partition[i] = 0;
+      }
+    }
+#else
+    for (int i = 0; i < nelems; i++) {
+      partition[i] = 0;
+    }
+#endif  // AMIGO_USE_METIS
+
+    delete[] elem_to_elem_ptr;
+    delete[] elem_to_elem;
+    *partition_ = partition;
+  }
+
+  /**
    * @brief Compute a nested dissection ordering.
    *
    * Note that the CSR structure must not include the diagonal element (compute
@@ -361,22 +421,55 @@ class OrderingUtils {
   }
 
   /**
-   * @brief Find a coloring of the elements that is good for parallel
-   * computation
+   * @brief Find a coloring of the elements using a direct element -> node
+   * information
    *
    * @param nelems Number of elements
-   * @param nnodes_per_elem Number of components (nodes) for each element
-   * @param elem_nodes List of nodes for each element
    * @param num_colors_ Output number of colors
+   * @param nnodes_per_elem Number of nodes for each element
+   * @param elem_nodes Nodes for each element
    * @param elem_by_color_ptr_ Pointer into the elem_by_color array
    * @param elem_by_color_ Elements listed by color
    */
   static void color_elements(const int nelems, const int nnodes_per_elem,
                              const int *elem_nodes, int *num_colors_,
                              int **elem_by_color_ptr_, int **elem_by_color_) {
+    int max_node = 0;
+    for (int i = 0; i < nelems * nnodes_per_elem; i++) {
+      if (elem_nodes[i] > max_node) {
+        max_node = elem_nodes[i];
+      }
+    }
+    max_node++;
+
+    auto element_nodes = [&](int elem, const int *ptr[]) {
+      *ptr = &elem_nodes[elem * nnodes_per_elem];
+      return nnodes_per_elem;
+    };
+
+    color_elements(max_node, nelems, element_nodes, num_colors_,
+                   elem_by_color_ptr_, elem_by_color_);
+  }
+
+  /**
+   * @brief Find a coloring of the elements that is good for parallel
+   * computation
+   *
+   * @tparam Functor Class type for the functor
+   * @param nnodes Number of nodes
+   * @param nelems Number of elements
+   * @param element_nodes Functor returning the number of nodes and node numbers
+   * @param num_colors_ Output number of colors
+   * @param elem_by_color_ptr_ Pointer into the elem_by_color array
+   * @param elem_by_color_ Elements listed by color
+   */
+  template <class Functor>
+  static void color_elements(const int nnodes, const int nelems,
+                             const Functor &element_nodes, int *num_colors_,
+                             int **elem_by_color_ptr_, int **elem_by_color_) {
     int *elem_to_elem_ptr, *elem_to_elem;
-    build_element_to_element(nelems, nnodes_per_elem, elem_nodes,
-                             &elem_to_elem_ptr, &elem_to_elem);
+    build_element_to_element(nnodes, nelems, element_nodes, &elem_to_elem_ptr,
+                             &elem_to_elem);
 
     // Greedy coloring
     int *elem_colors = new int[nelems];
@@ -451,52 +544,22 @@ class OrderingUtils {
   /**
    * @brief Build an element to neighboring element connectivity
    *
+   * @tparam Functor Class type for the functor
+   * @param nnodes Number of nodes
    * @param nelems Number of elements
-   * @param nnodes_per_elem Number of nodes for each element
-   * @param elem_nodes Nodes for each element
+   * @param element_nodes Functor returning the number of nodes and node numbers
    * @param elem_to_elem_ptr_ Output pointer into the elem_to_elem array
    * @param elem_to_elem_ Output element to element data
    */
-  static void build_element_to_element(const int nelems,
-                                       const int nnodes_per_elem,
-                                       const int *elem_nodes,
+  template <class Functor>
+  static void build_element_to_element(const int nnodes, const int nelems,
+                                       const Functor &element_nodes,
                                        int **elem_to_elem_ptr_,
                                        int **elem_to_elem_) {
-    int max_node = 0;
-    for (int i = 0; i < nelems * nnodes_per_elem; i++) {
-      if (elem_nodes[i] > max_node) {
-        max_node = elem_nodes[i];
-      }
-    }
-    max_node++;
-
     // Create a pointer from the nodes back to the elements
-    int *node_to_elem_ptr = new int[max_node + 1];
-    std::fill(node_to_elem_ptr, node_to_elem_ptr + max_node + 1, 0);
-
-    for (int i = 0; i < nelems * nnodes_per_elem; i++) {
-      node_to_elem_ptr[elem_nodes[i] + 1]++;
-    }
-    for (int i = 0; i < max_node; i++) {
-      node_to_elem_ptr[i + 1] += node_to_elem_ptr[i];
-    }
-
-    int *node_to_elem = new int[nelems * nnodes_per_elem];
-
-    // Fill in the element numbers
-    for (int i = 0; i < nelems; i++) {
-      for (int j = 0; j < nnodes_per_elem; j++) {
-        int node = elem_nodes[nnodes_per_elem * i + j];
-        node_to_elem[node_to_elem_ptr[node]] = i;
-        node_to_elem_ptr[node]++;
-      }
-    }
-
-    // Fix the now broken node_to_elem_ptr array
-    for (int i = max_node - 1; i >= 0; i--) {
-      node_to_elem_ptr[i + 1] = node_to_elem_ptr[i];
-    }
-    node_to_elem_ptr[0] = 0;
+    int *node_to_elem_ptr, *node_to_elem;
+    compute_node_to_element_ptr(nnodes, nelems, element_nodes,
+                                &node_to_elem_ptr, &node_to_elem);
 
     // Compute the element -> element data structure
     int *elem_flags = new int[nelems];
@@ -507,8 +570,10 @@ class OrderingUtils {
     for (int i = 0; i < nelems; i++) {
       int count = 0;
 
-      for (int j = 0; j < nnodes_per_elem; j++) {
-        int node = elem_nodes[nnodes_per_elem * i + j];
+      const int *ptr;
+      int nnodes_per_elem = element_nodes(i, &ptr);
+      for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
+        int node = ptr[0];
 
         // Find the adjacent elements
         int start = node_to_elem_ptr[node];
@@ -534,8 +599,10 @@ class OrderingUtils {
     for (int i = 0; i < nelems; i++) {
       int count = 0;
 
-      for (int j = 0; j < nnodes_per_elem; j++) {
-        int node = elem_nodes[nnodes_per_elem * i + j];
+      const int *ptr;
+      int nnodes_per_elem = element_nodes(i, &ptr);
+      for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
+        int node = ptr[0];
 
         // Find the adjacent elements
         int start = node_to_elem_ptr[node];
