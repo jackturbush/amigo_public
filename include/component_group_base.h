@@ -11,6 +11,10 @@ class ComponentGroupBase {
  public:
   virtual ~ComponentGroupBase() {}
 
+  virtual std::shared_ptr<ComponentGroupBase<T>> clone(
+      int num_elements, std::shared_ptr<Vector<int>> data_idx,
+      std::shared_ptr<Vector<int>> idx) const = 0;
+
   virtual T lagrangian(const Vector<T>& data, const Vector<T>& x) const {
     return T(0.0);
   }
@@ -21,8 +25,10 @@ class ComponentGroupBase {
   virtual void add_hessian(const Vector<T>& data, const Vector<T>& x,
                            CSRMat<T>& mat) const {}
 
-  virtual void get_layout_data(int* length_, int* ncomp_,
-                               const int** array_) const {}
+  virtual void get_data_layout_data(int* num_elements, int* nodes_per_elem,
+                                    const int** array) const {}
+  virtual void get_layout_data(int* num_elements, int* nodes_per_elem,
+                               const int** array) const {}
 };
 
 template <typename R, class... Ts>

@@ -113,8 +113,12 @@ enum class VectorLocation { HOST_ONLY, DEVICE_ONLY, HOST_AND_DEVICE };
 template <typename T, class Backend = DefaultVecBackend<T>>
 class Vector {
  public:
-  Vector(int size, VectorLocation vtype = VectorLocation::HOST_AND_DEVICE)
-      : size(size), vtype(vtype) {
+  Vector(int local_size, int ext_size = 0,
+         VectorLocation vtype = VectorLocation::HOST_AND_DEVICE)
+      : local_size(local_size),
+        ext_size(ext_size),
+        size(local_size + ext_size),
+        vtype(vtype) {
     if (vtype == VectorLocation::HOST_AND_DEVICE ||
         vtype == VectorLocation::HOST_ONLY) {
       array = new T[size];
@@ -124,6 +128,14 @@ class Vector {
         vtype == VectorLocation::DEVICE_ONLY) {
       backend.allocate(size);
     }
+  }
+  Vector(int local_size, int ext_size, T** array_)
+      : local_size(local_size),
+        ext_size(ext_size),
+        size(local_size + ext_size),
+        vtype(VectorLocation::HOST_ONLY) {
+    array = *array_;
+    *array_ = nullptr;
   }
 
   ~Vector() {
@@ -180,7 +192,7 @@ class Vector {
 
   void axpy(T alpha, const Vector<T>& x) {
     if (array && x.array) {
-      for (int i = 0; i < size; i++) {
+      for (int i = 0; i < local_size; i++) {
         array[i] += alpha * x.array[i];
       }
     }
@@ -189,7 +201,7 @@ class Vector {
   T dot(const Vector<T>& x) const {
     T value = 0.0;
     if (array && x.array) {
-      for (int i = 0; i < size; i++) {
+      for (int i = 0; i < local_size; i++) {
         value += array[i] * x.array[i];
       }
     }
@@ -216,7 +228,9 @@ class Vector {
   const T* get_device_array() const { return backend.get_device_ptr(); }
 
  private:
-  int size;  // Size of the vector
+  int local_size;  // The locally owned nodes
+  int ext_size;    // Size of externally owned nodes referenced on this proc
+  int size;        // Total size of the vector
   VectorLocation vtype;
   T* array;  // Host array
   Backend backend;

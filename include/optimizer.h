@@ -33,9 +33,9 @@ class OptVector {
     // Set the design variable values in xs as well
     Vector<T>& x_ = *x;
     Vector<T>& xs_ = *xs;
-    int num_variables = problem->get_num_variables();
+    int size = problem->get_num_variables();
     const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
-    for (int i = 0; i < num_variables; i++) {
+    for (int i = 0; i < size; i++) {
       if (!is_multiplier[i]) {
         xs_[i] = x_[i];
       }

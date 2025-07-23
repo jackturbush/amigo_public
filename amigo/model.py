@@ -8,13 +8,14 @@ from .amigo import (
     VectorInt,
     OptimizationProblem,
     AliasTracker,
+    NodeOwners,
     AMIGO_INCLUDE_PATH,
     A2D_INCLUDE_PATH,
     CSRMat,
 )
 from .component import Component
 from scipy.sparse import spmatrix
-
+from mpi4py import MPI
 
 if sys.version_info < (3, 9):
     Self = object
@@ -256,26 +257,27 @@ class ComponentGroup:
             vec.get_array()[:] = vec_array.ravel()
 
             # Create the object
-            return _import_class(module_name, self.class_name)(data_vec, vec)
+            return _import_class(module_name, self.class_name)(self.size, data_vec, vec)
         return None
 
     def create_output(self, module_name: str):
-        if not self.comp_obj.is_analyze_empty():
-            data_array = self.get_indices(self.data)
-            vec_array = self.get_indices(self.vars)
-            output_array = self.get_indices(self.outputs)
+        # if not self.comp_obj.is_analyze_empty():
+        #     data_array = self.get_indices(self.data)
+        #     vec_array = self.get_indices(self.vars)
+        #     output_array = self.get_indices(self.outputs)
 
-            data_vec = VectorInt(np.prod(data_array.shape))
-            data_vec.get_array()[:] = data_array.ravel()
-            vec = VectorInt(np.prod(vec_array.shape))
-            vec.get_array()[:] = vec_array.ravel()
-            output_vec = VectorInt(np.prod(output_array.shape))
-            output_vec.get_array()[:] = output_array.ravel()
+        #     data_vec = VectorInt(np.prod(data_array.shape))
+        #     data_vec.get_array()[:] = data_array.ravel()
+        #     vec = VectorInt(np.prod(vec_array.shape))
+        #     vec.get_array()[:] = vec_array.ravel()
+        #     output_vec = VectorInt(np.prod(output_array.shape))
+        #     output_vec.get_array()[:] = output_array.ravel()
 
-            class_name = self.class_name + "__output"
+        #     class_name = self.class_name + "__output"
 
-            # Create the object
-            return _import_class(module_name, class_name)(data_vec, vec, output_vec)
+        #     # Create the object
+        #     return _import_class(module_name, class_name)(data_vec, vec, output_vec)
+        return None
 
 
 class ModelVector:
@@ -646,7 +648,7 @@ class Model:
 
         return self.comp[comp_name].get_meta(name)
 
-    def _create_opt_problem(self):
+    def _create_opt_problem(self, comm=MPI.COMM_WORLD):
         """
         Create the optimization problem object that is used to evaluate the gradient and
         Hessian of the Lagrangian.
@@ -658,24 +660,31 @@ class Model:
             )
 
         objs = []
-        outs = []
+        # outs = []
         for name, comp in self.comp.items():
             obj = comp.create_group(self.module_name)
             if obj is not None:
                 objs.append(obj)
 
-            obj = comp.create_output(self.module_name)
-            if obj is not None:
-                outs.append(obj)
+            # obj = comp.create_output(self.module_name)
+            # if obj is not None:
+            #     outs.append(obj)
 
-        return OptimizationProblem(
-            self.data_size,
-            self.num_variables,
-            self.num_outputs,
-            self.constraint_indices,
-            objs,
-            outs,
-        )
+        var_ranges = np.zeros(comm.size + 1, dtype=np.int32)
+        var_ranges[1:] = self.num_variables
+        var_owners = NodeOwners(comm, var_ranges)
+
+        data_ranges = np.zeros(comm.size + 1, dtype=np.int32)
+        data_ranges[1:] = self.data_size
+        data_owners = NodeOwners(comm, data_ranges)
+
+        # Set the multipliers
+        is_multiplier = VectorInt(self.num_variables)
+        is_multiplier.get_array()[:] = 0
+        is_multiplier.get_array()[self.constraint_indices] = 1
+        prob = OptimizationProblem(comm, data_owners, var_owners, is_multiplier, objs)
+
+        return prob.partition_from_root()
 
     def get_data_vector(self):
         return ModelVector(self, self.problem.get_data_vector())
@@ -784,15 +793,22 @@ class Model:
 
         return x
 
-    def build_module(self, compile_args=[], link_args=[], define_macros=[]):
+    def build_module(
+        self, comm=MPI.COMM_WORLD, compile_args=[], link_args=[], define_macros=[]
+    ):
         """
         Generate the model code and build it. Additional compile, link arguments and macros can be added here.
         """
 
-        self._generate_cpp()
-        self._build_module(
-            compile_args=compile_args, link_args=link_args, define_macros=define_macros
-        )
+        if comm.rank == 0:
+            self._generate_cpp()
+            self._build_module(
+                compile_args=compile_args,
+                link_args=link_args,
+                define_macros=define_macros,
+            )
+
+        comm.Barrier()
 
         return
 
@@ -870,9 +886,27 @@ class Model:
         Quick setup for building the extension module. Some care is required with this.
         """
         from setuptools import setup, Extension
+        from subprocess import check_output
         import pybind11
         import sys
         from pybind11.setup_helpers import Pybind11Extension, build_ext
+        import mpi4py
+
+        def get_mpi_flags():
+            # Split the output from the mpicxx command
+            args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
+
+            # Determine whether the output is an include/link/lib command
+            inc_dirs, lib_dirs, libs = [], [], []
+            for flag in args:
+                if flag[:2] == "-I":
+                    inc_dirs.append(flag[2:])
+                elif flag[:2] == "-L":
+                    lib_dirs.append(flag[2:])
+                elif flag[:2] == "-l":
+                    libs.append(flag[2:])
+
+            return inc_dirs, lib_dirs, libs
 
         # Append the extra compile args list based on system type (allows for
         # compilaton on Windows vs. Linux/Mac)
@@ -881,9 +915,14 @@ class Model:
         else:
             compile_args += ["-std=c++17"]
 
+        compile_args.extend(["-O0", "-g"])
+
         pybind11_include = pybind11.get_include()
         amigo_include = AMIGO_INCLUDE_PATH
         a2d_include = A2D_INCLUDE_PATH
+
+        inc_dirs, lib_dirs, libs = get_mpi_flags()
+        inc_dirs.append(mpi4py.get_include())
 
         # Create the Extension
         ext_modules = [
@@ -891,6 +930,9 @@ class Model:
                 self.module_name,
                 sources=[f"{self.module_name}.cpp"],
                 depends=[f"{self.module_name}.h"],
+                include_dirs=inc_dirs,
+                libraries=libs,
+                library_dirs=lib_dirs,
                 extra_compile_args=compile_args,
                 extra_link_args=link_args,
                 define_macros=define_macros,

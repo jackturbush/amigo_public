@@ -30,7 +30,7 @@ class SerialGroupBackend {
     Data data;
     Input input;
     T value = 0.0;
-    int length = layout.get_length();
+    int length = layout.get_num_elements();
 
     for (int i = 0; i < length; i++) {
       data_layout.get_values(i, data_vec, data);
@@ -60,7 +60,7 @@ class SerialGroupBackend {
                            Vector<T> &res) const {
     Data data;
     Input input, gradient;
-    for (int i = 0; i < layout.get_length(); i++) {
+    for (int i = 0; i < layout.get_num_elements(); i++) {
       data_layout.get_values(i, data_vec, data);
       gradient.zero();
       layout.get_values(i, vec, input);
@@ -90,7 +90,7 @@ class SerialGroupBackend {
                                   Vector<T> &res) const {
     Data data;
     Input input, gradient, direction, result;
-    for (int i = 0; i < layout.get_length(); i++) {
+    for (int i = 0; i < layout.get_num_elements(); i++) {
       data_layout.get_values(i, data_vec, data);
       gradient.zero();
       result.zero();
@@ -120,7 +120,7 @@ class SerialGroupBackend {
                           CSRMat<T> &jac) const {
     Data data;
     Input input, gradient, direction, result;
-    for (int i = 0; i < layout.get_length(); i++) {
+    for (int i = 0; i < layout.get_num_elements(); i++) {
       data_layout.get_values(i, data_vec, data);
       int index[ncomp];
       layout.get_indices(i, index);
@@ -188,7 +188,7 @@ class OmpGroupBackend {
                       const IndexLayout<ncomp> &layout,
                       const Vector<T> &data_vec, const Vector<T> &vec) const {
     T value = 0.0;
-    int length = layout.get_length();
+    int length = layout.get_num_elements();
 
 #pragma omp parallel for reduction(+ : value)
     for (int i = 0; i < length; i++) {
@@ -404,11 +404,18 @@ class ComponentGroup : public ComponentGroupBase<T> {
   using Backend =
       DefaultGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
 
-  ComponentGroup(std::shared_ptr<Vector<int>> data_indices,
+  ComponentGroup(int num_elements, std::shared_ptr<Vector<int>> data_indices,
                  std::shared_ptr<Vector<int>> indices)
-      : data_layout(data_indices),
-        layout(indices),
+      : data_layout(num_elements, data_indices),
+        layout(num_elements, indices),
         backend(data_layout, layout) {}
+
+  std::shared_ptr<ComponentGroupBase<T>> clone(
+      int num_elements, std::shared_ptr<Vector<int>> data_idx,
+      std::shared_ptr<Vector<int>> idx) const {
+    return std::make_shared<ComponentGroup<T, Components...>>(num_elements,
+                                                              data_idx, idx);
+  }
 
   T lagrangian(const Vector<T> &data_vec, const Vector<T> &vec) const {
     return backend.lagrangian_kernel(data_layout, layout, data_vec, vec);
@@ -430,8 +437,14 @@ class ComponentGroup : public ComponentGroupBase<T> {
     backend.add_hessian_kernel(data_layout, layout, data_vec, vec, jac);
   }
 
-  void get_layout_data(int *length_, int *ncomp_, const int **array_) const {
-    layout.get_data(length_, ncomp_, array_);
+  void get_data_layout_data(int *num_elements, int *nodes_per_elem,
+                            const int **array) const {
+    data_layout.get_data(num_elements, nodes_per_elem, array);
+  }
+
+  void get_layout_data(int *num_elements, int *nodes_per_elem,
+                       const int **array) const {
+    layout.get_data(num_elements, nodes_per_elem, array);
   }
 
  private:
