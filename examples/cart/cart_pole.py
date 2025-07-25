@@ -5,6 +5,7 @@ import json
 import matplotlib.pylab as plt
 import niceplots
 
+
 final_time = 2.0
 num_time_steps = 1000
 
@@ -100,8 +101,9 @@ class Objective(am.Component):
     def compute(self):
         x1 = self.inputs["x1"]
         x2 = self.inputs["x2"]
+        dt = self.constants["dt"]
 
-        self.objective["obj"] = (x1 * x1 + x2 * x2) / 2
+        self.objective["obj"] = dt * (x1 * x1 + x2 * x2) / 2
 
         return
 
