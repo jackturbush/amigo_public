@@ -6,6 +6,10 @@ def sin(expr):
     return Expr(UnaryNode("sin", math.sin, expr.node))
 
 
+def sqrt(expr):
+    return Expr(UnaryNode("sqrt", math.sqrt, expr.node))
+
+
 def asin(expr):
     return Expr(UnaryNode("asin", math.asin, expr.node))
 
