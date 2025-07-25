@@ -15,7 +15,11 @@ from .amigo import (
 )
 from .component import Component
 from scipy.sparse import spmatrix
-from mpi4py import MPI
+
+try:
+    from mpi4py.MPI import COMM_WORLD
+except:
+    COMM_WORLD = None
 
 if sys.version_info < (3, 9):
     Self = object
@@ -558,7 +562,9 @@ class Model:
 
         return np.nonzero(temp)[0]
 
-    def initialize(self, order_type=OrderingType.AMD, order_for_block=False):
+    def initialize(
+        self, comm=COMM_WORLD, order_type=OrderingType.AMD, order_for_block=False
+    ):
         """
         Initialize the variable indices for each component and resolve all links.
         """
@@ -579,7 +585,7 @@ class Model:
         self.num_constraints = len(self.constraint_indices)
 
         self._initialized = True
-        self.problem = self._create_opt_problem()
+        self.problem = self._create_opt_problem(comm=comm)
 
         return
 
@@ -648,7 +654,7 @@ class Model:
 
         return self.comp[comp_name].get_meta(name)
 
-    def _create_opt_problem(self, comm=MPI.COMM_WORLD):
+    def _create_opt_problem(self, comm=COMM_WORLD):
         """
         Create the optimization problem object that is used to evaluate the gradient and
         Hessian of the Lagrangian.
@@ -658,6 +664,10 @@ class Model:
             raise RuntimeError(
                 "Must call initialize before creating the optimization problem"
             )
+
+        comm_size = 1
+        if comm is not None:
+            comm_size = comm.size
 
         objs = []
         # outs = []
@@ -670,11 +680,11 @@ class Model:
             # if obj is not None:
             #     outs.append(obj)
 
-        var_ranges = np.zeros(comm.size + 1, dtype=np.int32)
+        var_ranges = np.zeros(comm_size + 1, dtype=np.int32)
         var_ranges[1:] = self.num_variables
         var_owners = NodeOwners(comm, var_ranges)
 
-        data_ranges = np.zeros(comm.size + 1, dtype=np.int32)
+        data_ranges = np.zeros(comm_size + 1, dtype=np.int32)
         data_ranges[1:] = self.data_size
         data_owners = NodeOwners(comm, data_ranges)
 
@@ -684,7 +694,7 @@ class Model:
         is_multiplier.get_array()[self.constraint_indices] = 1
         prob = OptimizationProblem(comm, data_owners, var_owners, is_multiplier, objs)
 
-        return prob.partition_from_root()
+        return prob
 
     def get_data_vector(self):
         return ModelVector(self, self.problem.get_data_vector())
@@ -794,13 +804,17 @@ class Model:
         return x
 
     def build_module(
-        self, comm=MPI.COMM_WORLD, compile_args=[], link_args=[], define_macros=[]
+        self, comm=COMM_WORLD, compile_args=[], link_args=[], define_macros=[]
     ):
         """
         Generate the model code and build it. Additional compile, link arguments and macros can be added here.
         """
 
-        if comm.rank == 0:
+        comm_rank = 0
+        if comm is not None:
+            comm_rank = comm.rank
+
+        if comm_rank == 0:
             self._generate_cpp()
             self._build_module(
                 compile_args=compile_args,
@@ -808,7 +822,8 @@ class Model:
                 define_macros=define_macros,
             )
 
-        comm.Barrier()
+        if comm is not None:
+            comm.Barrier()
 
         return
 
@@ -890,7 +905,6 @@ class Model:
         import pybind11
         import sys
         from pybind11.setup_helpers import Pybind11Extension, build_ext
-        import mpi4py
 
         def get_mpi_flags():
             # Split the output from the mpicxx command
@@ -915,14 +929,17 @@ class Model:
         else:
             compile_args += ["-std=c++17"]
 
-        compile_args.extend(["-O0", "-g"])
-
         pybind11_include = pybind11.get_include()
         amigo_include = AMIGO_INCLUDE_PATH
         a2d_include = A2D_INCLUDE_PATH
 
-        inc_dirs, lib_dirs, libs = get_mpi_flags()
-        inc_dirs.append(mpi4py.get_include())
+        try:
+            import mpi4py
+
+            inc_dirs, lib_dirs, libs = get_mpi_flags()
+            inc_dirs.append(mpi4py.get_include())
+        except:
+            inc_dirs, lib_dirs, libs = [], [], []
 
         # Create the Extension
         ext_modules = [

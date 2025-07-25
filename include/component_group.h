@@ -5,6 +5,7 @@
 #include "component_group_base.h"
 #include "csr_matrix.h"
 #include "layout.h"
+#include "node_owners.h"
 #include "ordering_utils.h"
 #include "vector.h"
 
@@ -109,21 +110,24 @@ class SerialGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          CSRMat<T> &jac) const {
-    add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec, jac);
+                          NodeOwners &owners, CSRMat<T> &jac) const {
+    add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec,
+                                      owners, jac);
   }
 
   template <class Component, class... Remain>
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          CSRMat<T> &jac) const {
+                          NodeOwners &owners, CSRMat<T> &jac) const {
     Data data;
     Input input, gradient, direction, result;
     for (int i = 0; i < layout.get_num_elements(); i++) {
-      data_layout.get_values(i, data_vec, data);
-      int index[ncomp];
+      int index[ncomp], index_global[ncomp];
       layout.get_indices(i, index);
+      owners.local_to_global(ncomp, index, index_global);
+
+      data_layout.get_values(i, data_vec, data);
       layout.get_values(i, vec, input);
 
       for (int j = 0; j < Component::ncomp; j++) {
@@ -135,7 +139,7 @@ class SerialGroupBackend {
 
         Component::hessian(data, input, direction, gradient, result);
 
-        jac.add_row(index[j], Component::ncomp, index, result);
+        jac.add_row(index[j], Component::ncomp, index_global, result);
       }
     }
 
@@ -284,7 +288,7 @@ class OmpGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          CSRMat<T> &jac) const {
+                          NodeOwners &owners, CSRMat<T> &jac) const {
     add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec, jac);
   }
 
@@ -292,7 +296,7 @@ class OmpGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          CSRMat<T> &jac) const {
+                          NodeOwners &owners, CSRMat<T> &jac) const {
     int end = 0;
     for (int j = 0; j < num_colors; j++) {
       int start = end;
@@ -301,10 +305,11 @@ class OmpGroupBackend {
       for (int elem = start; elem < end; elem++) {
         Data data;
         Input input, gradient, direction, result;
+        int index[ncomp], index_global[ncomp];
+        layout.get_indices(elem, index);
+        owners.local_to_global(ncomp, index, index_global);
 
         data_layout.get_values(elem, data_vec, data);
-        int index[ncomp];
-        layout.get_indices(elem, index);
         layout.get_values(elem, vec, input);
 
         for (int k = 0; k < Component::ncomp; k++) {
@@ -316,7 +321,7 @@ class OmpGroupBackend {
 
           Component::hessian(data, input, direction, gradient, result);
 
-          jac.add_row(index[k], Component::ncomp, index, result);
+          jac.add_row(index[k], Component::ncomp, index_global, result);
         }
       }
     }
@@ -433,8 +438,8 @@ class ComponentGroup : public ComponentGroupBase<T> {
   }
 
   void add_hessian(const Vector<T> &data_vec, const Vector<T> &vec,
-                   CSRMat<T> &jac) const {
-    backend.add_hessian_kernel(data_layout, layout, data_vec, vec, jac);
+                   NodeOwners &owners, CSRMat<T> &jac) const {
+    backend.add_hessian_kernel(data_layout, layout, data_vec, vec, owners, jac);
   }
 
   void get_data_layout_data(int *num_elements, int *nodes_per_elem,

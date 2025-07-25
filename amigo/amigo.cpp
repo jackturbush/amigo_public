@@ -301,9 +301,12 @@ PYBIND11_MODULE(amigo, mod) {
            &amigo::OptimizationProblem<double>::set_data_vector)
       .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
       .def("gradient", &amigo::OptimizationProblem<double>::gradient)
-      .def("create_csr_matrix",
-           &amigo::OptimizationProblem<double>::create_csr_matrix)
-      .def("hessian", &amigo::OptimizationProblem<double>::hessian);
+      .def("create_matrix", &amigo::OptimizationProblem<double>::create_matrix)
+      .def("hessian", &amigo::OptimizationProblem<double>::hessian)
+      .def("scatter_vector",
+           &amigo::OptimizationProblem<double>::scatter_vector<double>,
+           py::arg("root_vec"), py::arg("dist_problem"), py::arg("dist_vec"),
+           py::arg("root") = 0, py::arg("distribute") = true);
   // .def("create_output_vector",
   //      &amigo::OptimizationProblem<double>::create_output_vector)
   // .def("analyze", &amigo::OptimizationProblem<double>::analyze)

@@ -123,6 +123,16 @@ class CSRMat {
   }
 
   /**
+   * @brief Duplicate the non-zero structure of the matrix
+   *
+   * @return std::shared_ptr<CSRMat<T>>
+   */
+  std::shared_ptr<CSRMat<T>> duplicate() const {
+    return std::make_shared<CSRMat<T>>(nrows, ncols, nnz, rowp, cols,
+                                       sqdef_index);
+  }
+
+  /**
    * @brief Zero the numerical values
    */
   void zero() { std::fill(data, data + nnz, 0.0); }
@@ -327,6 +337,38 @@ class CSRMat {
   }
 
   /**
+   * @brief Add a sorted row to the matrix
+   *
+   * @tparam ArrayType
+   * @param row
+   * @param nvalues
+   * @param indices
+   * @param values
+   */
+  template <class ArrayType>
+  void add_row_sorted(int row, int nvalues, const int indices[],
+                      const ArrayType values) {
+    int size = rowp[row + 1] - rowp[row];
+    int* col_ptr = &cols[rowp[row]];
+    T* data_ptr = &data[rowp[row]];
+
+    int i = 0;  // index into input indices
+    int j = 0;  // index into col_ptr
+
+    while (i < nvalues && j < size) {
+      if (indices[i] < col_ptr[j]) {
+        i++;
+      } else if (indices[i] > col_ptr[j]) {
+        j++;
+      } else {
+        data_ptr[j] += values[i];
+        i++;
+        j++;
+      }
+    }
+  }
+
+  /**
    * @brief Compute a matrix-vector product y = A @ x
    *
    * @param x The input vector
@@ -342,6 +384,28 @@ class CSRMat {
       for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
         y_array[i] += data[jp] * x_array[cols[jp]];
       }
+    }
+  }
+
+  void get_data(int* nrows_, int* ncols_, int* nnz_, const int* rowp_[],
+                const int* cols_[], T* data_[]) {
+    if (nrows_) {
+      *nrows_ = nrows;
+    }
+    if (ncols_) {
+      *ncols_ = ncols;
+    }
+    if (nnz_) {
+      *nnz_ = nnz;
+    }
+    if (rowp_) {
+      *rowp_ = rowp;
+    }
+    if (cols_) {
+      *cols_ = cols;
+    }
+    if (data_) {
+      *data_ = data;
     }
   }
 

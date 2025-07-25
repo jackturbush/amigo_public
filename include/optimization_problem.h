@@ -4,6 +4,7 @@
 // #ifdef AMIGO_USE_MPI
 #include <mpi.h>
 
+#include "matrix_distribute.h"
 #include "vector_distribute.h"
 // #endif
 
@@ -48,12 +49,23 @@ class OptimizationProblem {
           std::make_shared<Vector<int>>(var_owners->get_local_size());
     }
 
+    csr_mat = nullptr;
+    mat_dist = nullptr;
+    mat_dist_ctx = nullptr;
+
     dist_node_numbers = nullptr;
     dist_data_numbers = nullptr;
   }
   ~OptimizationProblem() {
     delete data_ctx;
     delete var_ctx;
+
+    if (mat_dist) {
+      delete mat_dist;
+    }
+    if (mat_dist_ctx) {
+      delete mat_dist_ctx;
+    }
   }
 
   /**
@@ -172,6 +184,9 @@ class OptimizationProblem {
           dist_node_numbers->get_array(), var_ranges);
     }
 
+    MPI_Bcast(data_ranges, mpi_size + 1, MPI_INT, root, comm);
+    MPI_Bcast(var_ranges, mpi_size + 1, MPI_INT, root, comm);
+
     std::vector<int> new_nelems(components.size());
     std::vector<std::shared_ptr<Vector<int>>> new_nodes(components.size());
     std::vector<std::shared_ptr<Vector<int>>> new_data(components.size());
@@ -184,23 +199,35 @@ class OptimizationProblem {
       const int* elem_data;
       components[i]->get_data_layout_data(&nelems, &ndata_per_elem, &elem_data);
 
-      int nelems_local;
+      int nelems_local = 0;
       int* elem_data_local = nullptr;
-      OrderingUtils::distribute_elements(
-          comm, nelems, ndata_per_elem, elem_data, part,
-          dist_data_numbers->get_array(), &nelems_local, &elem_data_local);
+      int* new_data_numbers = nullptr;
+      if (dist_data_numbers) {
+        new_data_numbers = dist_data_numbers->get_array();
+      }
+
+      if (ndata_per_elem > 0) {
+        OrderingUtils::distribute_elements(
+            comm, nelems, ndata_per_elem, elem_data, part, new_data_numbers,
+            &nelems_local, &elem_data_local, root);
+      }
 
       new_data[i] = std::make_shared<Vector<int>>(nelems_local * ndata_per_elem,
                                                   0, &elem_data_local);
 
       int nnodes_per_elem;
-      const int* elem_nodes;
+      const int* elem_nodes = nullptr;
       components[i]->get_layout_data(&nelems, &nnodes_per_elem, &elem_nodes);
+
+      int* new_node_numbers = nullptr;
+      if (dist_node_numbers) {
+        new_node_numbers = dist_node_numbers->get_array();
+      }
 
       int* elem_nodes_local = nullptr;
       OrderingUtils::distribute_elements(
-          comm, nelems, nnodes_per_elem, elem_nodes, part,
-          dist_node_numbers->get_array(), &nelems_local, &elem_nodes_local);
+          comm, nelems, nnodes_per_elem, elem_nodes, part, new_node_numbers,
+          &nelems_local, &elem_nodes_local, root);
 
       new_nelems[i] = nelems_local;
       new_nodes[i] = std::make_shared<Vector<int>>(
@@ -209,9 +236,6 @@ class OptimizationProblem {
       // Increment the pointer into the partition
       part += nelems;
     }
-
-    MPI_Bcast(data_ranges, mpi_size + 1, MPI_INT, root, comm);
-    MPI_Bcast(var_ranges, mpi_size + 1, MPI_INT, root, comm);
 
     // Reorder the data array with a local ordering
     std::vector<int> ext_data_nodes;
@@ -459,21 +483,51 @@ class OptimizationProblem {
 
     mat->zero();
     for (size_t i = 0; i < components.size(); i++) {
-      components[i]->add_hessian(*data_vec, *x, *mat);
+      components[i]->add_hessian(*data_vec, *x, *var_owners, *mat);
     }
+
+    mat_dist->begin_assembly(mat, mat_dist_ctx);
+    mat_dist->end_assembly(mat, mat_dist_ctx);
   }
 
-  std::shared_ptr<CSRMat<T>> create_csr_matrix() const {
-    std::vector<int> intervals;
-    auto element_nodes = get_element_nodes(intervals);
+  /**
+   * @brief Create the CSR matrix object that can store the Hessian
+   *
+   * @return std::shared_ptr<CSRMat<T>>
+   */
+  std::shared_ptr<CSRMat<T>> create_matrix() {
+    if (csr_mat) {
+      return csr_mat->duplicate();
+    } else {
+      std::vector<int> intervals;
+      auto element_nodes = get_element_nodes(intervals);
+      int num_elements = intervals[components.size()];
+      int num_variables =
+          var_owners->get_local_size() + var_owners->get_ext_size();
 
-    int sqdef_index = -1;
-    int num_variables =
-        var_owners->get_local_size() + var_owners->get_ext_size();
+      // Create the local CSR structure
+      bool include_diagonal = true;
 
-    return CSRMat<T>::create_from_element_conn(num_variables, num_variables,
-                                               intervals[components.size()],
-                                               element_nodes, sqdef_index);
+      // Columns sorted in MatrixDistribute initialization
+      bool sort_columns = false;
+
+      // Generate the non-zero pattern
+      int *rowp, *cols;
+      OrderingUtils::create_csr_from_element_conn(
+          num_variables, num_variables, num_elements, element_nodes,
+          include_diagonal, sort_columns, &rowp, &cols);
+
+      // Distribute the pattern across matrices
+      mat_dist =
+          new MatrixDistribute(comm, var_owners, var_owners, num_variables,
+                               num_variables, rowp, cols, csr_mat);
+      mat_dist_ctx = mat_dist->create_context<T>();
+
+      delete[] rowp;
+      delete[] cols;
+
+      return csr_mat;
+    }
   }
 
   // void analyze(const std::shared_ptr<Vector<T>> x,
@@ -710,9 +764,11 @@ class OptimizationProblem {
   // Variable information
   VectorDistribute data_dist;
   VectorDistribute var_dist;
-  // VectorDistribute output_dist;
   VectorDistribute::VecDistributeContext<T>* data_ctx;
   VectorDistribute::VecDistributeContext<T>* var_ctx;
+
+  // Output information
+  // VectorDistribute output_dist;
   // VectorDistribute::VecDistributeContext<T>* output_ctx;
 
   // The shared data vector
@@ -721,6 +777,11 @@ class OptimizationProblem {
   // Node numbers created by
   std::shared_ptr<Vector<int>> dist_node_numbers;
   std::shared_ptr<Vector<int>> dist_data_numbers;
+
+  // Information about the Hessian matrix
+  std::shared_ptr<CSRMat<T>> csr_mat;
+  MatrixDistribute* mat_dist;
+  MatrixDistribute::MatDistributeContext<T>* mat_dist_ctx;
 };
 
 }  // namespace amigo

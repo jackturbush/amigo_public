@@ -112,8 +112,6 @@ def get_extensions():
         link_args += ["-fopenmp"]
         define_macros += [("AMIGO_USE_OPENMP", "1")]
 
-    compile_args.extend(["-O0", "-g"])
-
     ext_modules = [
         Extension(
             "amigo.amigo",

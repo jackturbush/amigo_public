@@ -2,6 +2,10 @@ import math
 from .expressions import Expr, UnaryNode, OpNode
 
 
+def sqrt(expr):
+    return Expr(UnaryNode("sqrt", math.sqrt, expr.node))
+
+
 def sin(expr):
     return Expr(UnaryNode("sin", math.sin, expr.node))
 
