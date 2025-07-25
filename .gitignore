@@ -5,6 +5,10 @@ include/amigo_include_paths.h
 /build/*
 *.so
 
+# Ignore anything in the pycache
+**/__pycache__
+**/*.pyd
+
 # Ignore in examples/ and all its subdirectories
 /examples/**/*.h
 /examples/**/*.cpp
@@ -12,3 +16,5 @@ include/amigo_include_paths.h
 /examples/**/*.png
 /examples/**/*.svg
 /examples/**/*.json
+/examples/**/*.pyd
+/examples/**/build/
