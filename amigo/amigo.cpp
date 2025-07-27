@@ -301,6 +301,12 @@ PYBIND11_MODULE(amigo, mod) {
            &amigo::OptimizationProblem<double>::get_data_vector)
       .def("set_data_vector",
            &amigo::OptimizationProblem<double>::set_data_vector)
+      .def(
+          "get_local_to_global_node_numbers",
+          &amigo::OptimizationProblem<double>::get_local_to_global_node_numbers)
+      .def(
+          "get_local_to_global_data_numbers",
+          &amigo::OptimizationProblem<double>::get_local_to_global_data_numbers)
       .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
       .def("gradient", &amigo::OptimizationProblem<double>::gradient)
       .def("create_matrix", &amigo::OptimizationProblem<double>::create_matrix)

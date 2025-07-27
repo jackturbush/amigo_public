@@ -36,8 +36,9 @@ class DirectScipySolver:
 
 
 class DirectPetscSolver:
-    def __init__(self, comm, mpi_problem):
+    def __init__(self, comm, problem, mpi_problem):
         self.comm = comm
+        self.problem = problem
         self.mpi_problem = mpi_problem
         self.hess = self.mpi_problem.create_matrix()
         self.nrows_local = self.mpi_problem.get_num_variables()
@@ -64,6 +65,23 @@ class DirectPetscSolver:
 
         data = self.hess.get_data()
 
+        # Try to compare the serial and distributed matrices
+        x_serial = self.problem.create_vector()
+        self.problem.gather_vector(self.mpi_problem, x, x_serial)
+
+        # Create the serial matrix
+        hess_serial = self.problem.create_matrix()
+        nrows, ncols, nnz, rowp, cols = hess_serial.get_nonzero_structure()
+
+        self.problem.hessian(x_serial, hess_serial)
+        data_serial = hess_serial.get_data()
+        H_serial = csr_matrix((data_serial, cols, rowp), shape=(nrows, ncols))
+
+        # Get the mapping
+        mapping = self.problem.get_local_to_global_node_numbers().get_array()
+
+        H_mpi2 = H_serial[mapping, :][:, mapping]
+
         # nnz = self.rowp[self.nrows_local]
         # self.H.setValuesCSR(
         #     self.rowp[: self.nrows_local + 1], self.cols[:nnz], data[:nnz]
@@ -88,8 +106,10 @@ class DirectPetscSolver:
         # px.get_array()[:] = self.x.getArray()[:]
 
         # Compute the solution using scipy
-        H = csr_matrix((data, self.cols, self.rowp), shape=(self.nrows, self.ncols))
-        px.get_array()[:] = spsolve(H, bx.get_array())
+        H_mpi = csr_matrix((data, self.cols, self.rowp), shape=(self.nrows, self.ncols))
+        px.get_array()[:] = spsolve(H_mpi2, bx.get_array())
+
+        print("max_diff = ", np.argmax(np.absolute(H_mpi - H_mpi2).data))
 
         return
 
@@ -161,7 +181,7 @@ class Optimizer:
 
         # Set the solver for the KKT system
         if solver is None and self.distribute:
-            self.solver = DirectPetscSolver(self.comm, self.mpi_problem)
+            self.solver = DirectPetscSolver(self.comm, self.problem, self.mpi_problem)
         elif solver is None:
             self.solver = DirectScipySolver(self.problem)
         else:

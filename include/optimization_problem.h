@@ -139,6 +139,26 @@ class OptimizationProblem {
   }
 
   /**
+   * @brief Get the node indices for distributing from local to distributed
+   * vectors
+   *
+   * @return std::shared_ptr<Vector<int>>
+   */
+  std::shared_ptr<Vector<int>> get_local_to_global_node_numbers() {
+    return dist_node_numbers;
+  }
+
+  /**
+   * @brief Get the data indices for distributing from local to distributed
+   * vectors
+   *
+   * @return std::shared_ptr<Vector<int>>
+   */
+  std::shared_ptr<Vector<int>> get_local_to_global_data_numbers() {
+    return dist_data_numbers;
+  }
+
+  /**
    * @brief Partition the optimization problem across the available processors
    * from the root processor.
    *
