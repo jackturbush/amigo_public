@@ -1,5 +1,5 @@
-#ifndef AMIGO_CSR_DISTRIBUTE_H
-#define AMIGO_CSR_DISTRIBUTE_H
+#ifndef AMIGO_MATRIX_DISTRIBUTE_H
+#define AMIGO_MATRIX_DISTRIBUTE_H
 
 #include <mpi.h>
 
@@ -422,4 +422,4 @@ class MatrixDistribute {
 
 }  // namespace amigo
 
-#endif  // AMIGO_CSR_DISTRIBUTE_H
+#endif  // AMIGO_MATRIX_DISTRIBUTE_H

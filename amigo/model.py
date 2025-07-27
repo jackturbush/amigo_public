@@ -929,6 +929,8 @@ class Model:
         else:
             compile_args += ["-std=c++17"]
 
+        compile_args += ["-g", "-O0"]
+
         pybind11_include = pybind11.get_include()
         amigo_include = AMIGO_INCLUDE_PATH
         a2d_include = A2D_INCLUDE_PATH

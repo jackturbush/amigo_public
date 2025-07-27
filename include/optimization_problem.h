@@ -69,6 +69,13 @@ class OptimizationProblem {
   }
 
   /**
+   * @brief Get the MPI communicator
+   *
+   * @return MPI_Comm
+   */
+  MPI_Comm get_mpi_comm() { return comm; }
+
+  /**
    * @brief Get the num variables that are owned by this processor
    *
    * @return int Number of variables
@@ -283,14 +290,14 @@ class OptimizationProblem {
    *
    * @tparam T1 The type of the vector
    * @param root_vec The vector on the root processor
-   * @param prob The distributed version of the problem
+   * @param dist_prob The distributed version of the problem
    * @param dist_vec The distributed vector (output from the code)
-   * @param root The root processor
+   * @param root The rank of the root processor
    * @param distribute Boolean indicating whether to distribute external values
    */
   template <typename T1>
   void scatter_vector(const std::shared_ptr<Vector<T1>> root_vec,
-                      const std::shared_ptr<OptimizationProblem<T>> prob,
+                      const std::shared_ptr<OptimizationProblem<T>> dist_prob,
                       std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
                       bool distribute = true) {
     int mpi_rank, mpi_size;
@@ -306,7 +313,7 @@ class OptimizationProblem {
       reordered = new T1[size];
 
       counts = new int[mpi_size];
-      disp = prob->var_owners->get_range();
+      disp = dist_prob->var_owners->get_range();
       for (int i = 0; i < mpi_size; i++) {
         counts[i] = disp[i + 1] - disp[i];
       }
@@ -338,6 +345,59 @@ class OptimizationProblem {
       var_dist.end_forward(dist_vec, ctx);
 
       delete ctx;
+    }
+  }
+
+  /**
+   * @brief Gather vector components to the root processor
+   *
+   * @tparam T1 The data type of the vector
+   * @param dist_prob The distributed version of the problem
+   * @param dist_vec The distributed vector
+   * @param root_vec The vector on the root processor
+   * @param root The rank of the root processor
+   */
+  template <typename T1>
+  void gather_vector(const std::shared_ptr<OptimizationProblem<T>> dist_prob,
+                     const std::shared_ptr<Vector<T1>> dist_vec,
+                     std::shared_ptr<Vector<T1>> root_vec, int root = 0) {
+    int mpi_rank, mpi_size;
+    MPI_Comm_rank(comm, &mpi_rank);
+    MPI_Comm_size(comm, &mpi_size);
+
+    T1* reordered = nullptr;
+    int* counts = nullptr;
+    const int* disp = nullptr;
+
+    if (mpi_rank == root) {
+      int size = root_vec->get_size();
+      reordered = new T1[size];
+
+      counts = new int[mpi_size];
+      disp = dist_prob->var_owners->get_range();
+      for (int i = 0; i < mpi_size; i++) {
+        counts[i] = disp[i + 1] - disp[i];
+      }
+    }
+
+    int size = dist_vec->get_size();
+    const T1* array = dist_vec->get_array();
+    MPI_Gatherv(array, size, get_mpi_type<T1>(), reordered, counts, disp,
+                get_mpi_type<T1>(), root, comm);
+
+    // Reorder the local vector
+    if (mpi_rank == root && dist_node_numbers) {
+      const int* new_node_numbers = dist_node_numbers->get_array();
+      T1* root_array = root_vec->get_array();
+
+      for (int i = 0; i < size; i++) {
+        root_array[i] = reordered[new_node_numbers[i]];
+      }
+    }
+
+    if (reordered) {
+      delete[] reordered;
+      delete[] counts;
     }
   }
 

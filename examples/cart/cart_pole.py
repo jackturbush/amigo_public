@@ -5,6 +5,14 @@ import json
 import matplotlib.pylab as plt
 import niceplots
 
+try:
+    from mpi4py import MPI
+
+    COMM_WORLD = MPI.COMM_WORLD
+except:
+    COMM_WORLD = None
+
+
 final_time = 2.0
 num_time_steps = 1000
 
@@ -293,6 +301,13 @@ parser.add_argument(
     default=False,
     help="Show the sparsity pattern",
 )
+parser.add_argument(
+    "--distribute",
+    dest="distribute",
+    action="store_true",
+    default=False,
+    help="Distribute the problem",
+)
 args = parser.parse_args()
 
 model = create_cart_model()
@@ -310,54 +325,60 @@ if args.build:
         compile_args=compile_args, link_args=link_args, define_macros=define_macros
     )
 
-model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
+comm = COMM_WORLD
+model.initialize(comm=comm, order_type=am.OrderingType.NESTED_DISSECTION)
 
-with open("cart_pole_model.json", "w") as fp:
-    json.dump(model.get_serializable_data(), fp, indent=2)
+comm_rank = 0
+distribute = args.distribute
+if comm is not None:
+    comm_rank = comm.rank
 
+if comm_rank == 0:
+    with open("cart_pole_model.json", "w") as fp:
+        json.dump(model.get_serializable_data(), fp, indent=2)
 
-print(f"Num variables:              {model.num_variables}")
-print(f"Num constraints:            {model.num_constraints}")
-
-prob = model.get_opt_problem()
+    print(f"Num variables:              {model.num_variables}")
+    print(f"Num constraints:            {model.num_constraints}")
 
 # Get the design variables
 x = model.create_vector()
-x[:] = 0.0
-
-# # Set the initial conditions based on the varaibles
-x["cart.q[:, 0]"] = np.linspace(0, 2.0, num_time_steps + 1)
-x["cart.q[:, 1]"] = np.linspace(0, np.pi, num_time_steps + 1)
-x["cart.q[:, 2]"] = 1.0
-x["cart.q[:, 3]"] = 1.0
-
-# Apply lower and upper bound constraints
 lower = model.create_vector()
 upper = model.create_vector()
-lower["cart.x"] = -50
-upper["cart.x"] = 50
 
-opt = am.Optimizer(model, x, lower=lower, upper=upper)
+if comm_rank == 0:
+    # Set the initial conditions based on the varaibles
+    x["cart.q[:, 0]"] = np.linspace(0, 2.0, num_time_steps + 1)
+    x["cart.q[:, 1]"] = np.linspace(0, np.pi, num_time_steps + 1)
+    x["cart.q[:, 2]"] = 1.0
+    x["cart.q[:, 3]"] = 1.0
+
+    # Apply lower and upper bound constraints
+    lower["cart.x"] = -50
+    upper["cart.x"] = 50
+
+# Set up the optimizer
+opt = am.Optimizer(model, x, lower=lower, upper=upper, comm=comm, distribute=distribute)
+
 data = opt.optimize({"max_iterations": 100, "record_components": ["cart.x[-1]"]})
-
 with open("cart_opt_data.json", "w") as fp:
     json.dump(data, fp, indent=2)
 
-d = x["cart.q[:, 0]"]
-theta = x["cart.q[:, 1]"]
-xctrl = x["cart.x"]
+if comm_rank == 0:
+    d = x["cart.q[:, 0]"]
+    theta = x["cart.q[:, 1]"]
+    xctrl = x["cart.x"]
 
-norms = []
-for iter_data in data["iterations"]:
-    norms.append(iter_data["residual"])
+    norms = []
+    for iter_data in data["iterations"]:
+        norms.append(iter_data["residual"])
 
-plot(d, theta, xctrl)
-plot_convergence(norms)
-visualize(d, theta)
+    plot(d, theta, xctrl)
+    plot_convergence(norms)
+    visualize(d, theta)
 
-if args.show_sparsity:
-    H = am.tocsr(opt.solver.hess)
-    plt.figure(figsize=(6, 6))
-    plt.spy(H, markersize=0.2)
-    plt.title("Sparsity pattern of matrix A")
-    plt.show()
+    if args.show_sparsity:
+        H = am.tocsr(opt.solver.hess)
+        plt.figure(figsize=(6, 6))
+        plt.spy(H, markersize=0.2)
+        plt.title("Sparsity pattern of matrix A")
+        plt.show()

@@ -1,7 +1,9 @@
 #ifndef AMIGO_OPTIMIZER_H
 #define AMIGO_OPTIMIZER_H
 
-#include <iostream>
+#include <mpi.h>
+
+#include <cstdio>
 
 #include "component_group_base.h"
 #include "optimization_problem.h"
@@ -158,6 +160,7 @@ class InteriorPointOptimizer {
                          std::shared_ptr<Vector<T>> lower,
                          std::shared_ptr<Vector<T>> upper)
       : problem(problem), lower(lower), upper(upper) {
+    comm = problem->get_mpi_comm();
     num_variables = problem->get_num_variables();
   }
 
@@ -327,7 +330,9 @@ class InteriorPointOptimizer {
     }
 
     // Compute the residual norm
-    T norm = rx.dot(rx) + rxs.dot(rxs) + rzl.dot(rzl) + rzu.dot(rzu);
+    T local_norm = rx.dot(rx) + rxs.dot(rxs) + rzl.dot(rzl) + rzu.dot(rzu);
+    T norm;
+    MPI_Allreduce(&local_norm, &norm, 1, get_mpi_type<T>(), MPI_SUM, comm);
 
     return std::sqrt(norm);
   }
@@ -757,6 +762,9 @@ class InteriorPointOptimizer {
 
   // Lower and upper bounds for the design variables
   std::shared_ptr<Vector<T>> lower, upper;
+
+  // The MPI communicator
+  MPI_Comm comm;
 
   // The number of primal and dual variables
   int num_variables;

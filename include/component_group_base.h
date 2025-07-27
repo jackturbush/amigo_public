@@ -24,7 +24,7 @@ class ComponentGroupBase {
   virtual void add_hessian_product(const Vector<T>& data, const Vector<T>& x,
                                    const Vector<T>& p, Vector<T>& h) const {}
   virtual void add_hessian(const Vector<T>& data, const Vector<T>& x,
-                           NodeOwners& owners, CSRMat<T>& mat) const {}
+                           const NodeOwners& owners, CSRMat<T>& mat) const {}
 
   virtual void get_data_layout_data(int* num_elements, int* nodes_per_elem,
                                     const int** array) const {}

@@ -110,7 +110,7 @@ class SerialGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          NodeOwners &owners, CSRMat<T> &jac) const {
+                          const NodeOwners &owners, CSRMat<T> &jac) const {
     add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec,
                                       owners, jac);
   }
@@ -119,7 +119,7 @@ class SerialGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          NodeOwners &owners, CSRMat<T> &jac) const {
+                          const NodeOwners &owners, CSRMat<T> &jac) const {
     Data data;
     Input input, gradient, direction, result;
     for (int i = 0; i < layout.get_num_elements(); i++) {
@@ -144,7 +144,8 @@ class SerialGroupBackend {
     }
 
     if constexpr (sizeof...(Remain) > 0) {
-      add_hessian_kernel<Remain...>(data_layout, layout, data_vec, vec, jac);
+      add_hessian_kernel<Remain...>(data_layout, layout, data_vec, vec, owners,
+                                    jac);
     }
   }
 };
@@ -288,15 +289,16 @@ class OmpGroupBackend {
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          NodeOwners &owners, CSRMat<T> &jac) const {
-    add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec, jac);
+                          const NodeOwners &owners, CSRMat<T> &jac) const {
+    add_hessian_kernel<Components...>(data_layout, layout, data_vec, vec,
+                                      owners, jac);
   }
 
   template <class Component, class... Remain>
   void add_hessian_kernel(const IndexLayout<ndata> &data_layout,
                           const IndexLayout<ncomp> &layout,
                           const Vector<T> &data_vec, const Vector<T> &vec,
-                          NodeOwners &owners, CSRMat<T> &jac) const {
+                          const NodeOwners &owners, CSRMat<T> &jac) const {
     int end = 0;
     for (int j = 0; j < num_colors; j++) {
       int start = end;
@@ -327,7 +329,8 @@ class OmpGroupBackend {
     }
 
     if constexpr (sizeof...(Remain) > 0) {
-      add_hessian_kernel<Remain...>(data_layout, layout, data_vec, vec, jac);
+      add_hessian_kernel<Remain...>(data_layout, layout, data_vec, vec, owners,
+                                    jac);
     }
   }
 
@@ -438,7 +441,7 @@ class ComponentGroup : public ComponentGroupBase<T> {
   }
 
   void add_hessian(const Vector<T> &data_vec, const Vector<T> &vec,
-                   NodeOwners &owners, CSRMat<T> &jac) const {
+                   const NodeOwners &owners, CSRMat<T> &jac) const {
     backend.add_hessian_kernel(data_layout, layout, data_vec, vec, owners, jac);
   }
 
