@@ -5,6 +5,10 @@
 
 #include "block_amd.h"
 
+// #ifdef AMIGO_USE_MPI
+#include <mpi.h>
+// #endif
+
 #ifdef AMIGO_USE_METIS
 extern "C" {
 #include "metis.h"
@@ -78,8 +82,9 @@ class OrderingUtils {
    * @param partition_ New array of length = nelems with paritition assignments
    */
   template <class Functor>
-  void partition(int nnodes, int nelems, const Functor &element_nodes,
-                 int part_size, int *partition_[]) {
+  static void compute_partition(int nnodes, int nelems,
+                                const Functor &element_nodes, int part_size,
+                                int *partition_[]) {
     // Create a pointer from the nodes back to the elements
     int *elem_to_elem_ptr, *elem_to_elem;
     build_element_to_element(nnodes, nelems, element_nodes, &elem_to_elem_ptr,
@@ -390,7 +395,10 @@ class OrderingUtils {
       const int *ptr;
       int nodes_per_element = element_nodes(i, &ptr);
       for (int j = 0; j < nodes_per_element; j++, ptr++) {
-        node_to_elem_ptr[ptr[0] + 1]++;
+        int node = ptr[0];
+        if (node >= 0 && node < nnodes) {
+          node_to_elem_ptr[ptr[0] + 1]++;
+        }
       }
     }
 
@@ -405,8 +413,10 @@ class OrderingUtils {
       int nodes_per_element = element_nodes(i, &ptr);
       for (int j = 0; j < nodes_per_element; j++, ptr++) {
         int node = ptr[0];
-        node_to_elem[node_to_elem_ptr[node]] = i;
-        node_to_elem_ptr[node]++;
+        if (node >= 0 && node < nnodes) {
+          node_to_elem[node_to_elem_ptr[node]] = i;
+          node_to_elem_ptr[node]++;
+        }
       }
     }
 
@@ -575,15 +585,17 @@ class OrderingUtils {
       for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
         int node = ptr[0];
 
-        // Find the adjacent elements
-        int start = node_to_elem_ptr[node];
-        int end = node_to_elem_ptr[node + 1];
-        for (int k = start; k < end; k++) {
-          int e = node_to_elem[k];
+        if (node >= 0 && node < nnodes) {
+          // Find the adjacent elements
+          int start = node_to_elem_ptr[node];
+          int end = node_to_elem_ptr[node + 1];
+          for (int k = start; k < end; k++) {
+            int e = node_to_elem[k];
 
-          if (e != i && elem_flags[e] != i) {
-            count++;
-            elem_flags[e] = i;
+            if (e != i && elem_flags[e] != i) {
+              count++;
+              elem_flags[e] = i;
+            }
           }
         }
       }
@@ -604,16 +616,18 @@ class OrderingUtils {
       for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
         int node = ptr[0];
 
-        // Find the adjacent elements
-        int start = node_to_elem_ptr[node];
-        int end = node_to_elem_ptr[node + 1];
-        for (int k = start; k < end; k++) {
-          int e = node_to_elem[k];
+        if (node >= 0 && node < nnodes) {
+          // Find the adjacent elements
+          int start = node_to_elem_ptr[node];
+          int end = node_to_elem_ptr[node + 1];
+          for (int k = start; k < end; k++) {
+            int e = node_to_elem[k];
 
-          if (e != i && elem_flags[e] != i) {
-            elem_to_elem[elem_to_elem_ptr[i] + count] = e;
-            count++;
-            elem_flags[e] = i;
+            if (e != i && elem_flags[e] != i) {
+              elem_to_elem[elem_to_elem_ptr[i] + count] = e;
+              count++;
+              elem_flags[e] = i;
+            }
           }
         }
       }
@@ -702,6 +716,206 @@ class OrderingUtils {
 
     *rowp_ = rowp;
     *cols_ = cols;
+  }
+
+  /**
+   * @brief Compute a reordering of the variables that is consistent with the
+   * partitioning of the mesh
+   *
+   * @tparam Functor Class type for the functor
+   * @param nnodes Number of nodes
+   * @param nelems Number of elements
+   * @param element_nodes Functor returning the number of nodes and node numbers
+   * @param part_size Partition size
+   * @param partition Array of paritition assignments
+   * @param node_ranges Array of node ranges associated with the assignment
+   * @param new_node_numbers New numbering scheme established by greedy ordering
+   */
+  template <class Functor>
+  static void reorder_for_partition(const int nnodes, const int nelems,
+                                    const Functor &element_nodes, int part_size,
+                                    const int partition[],
+                                    int new_node_numbers[], int node_ranges[]) {
+    std::fill(new_node_numbers, new_node_numbers + nnodes, -1);
+    std::fill(node_ranges, node_ranges + (part_size + 1), 0);
+
+    // Count up the number of times each node will be assigned
+    for (int i = 0; i < nelems; i++) {
+      const int *ptr;
+      int nnodes_per_elem = element_nodes(i, &ptr);
+      for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
+        int node = ptr[0];
+        if (new_node_numbers[node] == -1) {
+          int part = partition[i];
+          new_node_numbers[node] = 1;
+          node_ranges[part + 1]++;
+        }
+      }
+    }
+
+    // Adjust the node ranges and reset the node numbers
+    for (int i = 0; i < part_size; i++) {
+      node_ranges[i + 1] += node_ranges[i];
+    }
+    std::fill(new_node_numbers, new_node_numbers + nnodes, -1);
+
+    // Count up the number of times each node will be assigned
+    for (int i = 0; i < nelems; i++) {
+      const int *ptr;
+      int nnodes_per_elem = element_nodes(i, &ptr);
+      for (int j = 0; j < nnodes_per_elem; j++, ptr++) {
+        int node = ptr[0];
+        if (new_node_numbers[node] == -1) {
+          int part = partition[i];
+          new_node_numbers[node] = node_ranges[part];
+          node_ranges[part]++;
+        }
+      }
+    }
+
+    // Reset the node range values
+    for (int i = part_size - 1; i >= 0; i--) {
+      node_ranges[i + 1] = node_ranges[i];
+    }
+    node_ranges[0] = 0;
+  }
+
+  /**
+   * @brief Distribute the elements to the processors from the root
+   *
+   * @param comm MPI communicator
+   * @param nelems Number of elements
+   * @param nnodes_per_elem Number of nodes per element
+   * @param elem_nodes Nodes in the original ordering
+   * @param partition The element assignment to each processor
+   * @param new_node_numbers Global assignment of the new nodes
+   * @param nelems_local Number of local elements
+   * @param elem_nodes_local Element nodes on the local processor
+   * @param root Root processor rank (typically = 0)
+   */
+  static void distribute_elements(MPI_Comm comm, const int nelems,
+                                  const int nnodes_per_elem,
+                                  const int elem_nodes[], const int partition[],
+                                  const int new_node_numbers[],
+                                  int *nelems_local_, int *elem_nodes_local_[],
+                                  const int root = 0) {
+    int size, rank;
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    int *count = nullptr, *disp = nullptr;
+    if (rank == root) {
+      count = new int[size];
+      disp = new int[size + 1];
+
+      std::fill(count, count + size, 0);
+
+      // Count up which elements are going where...
+      for (int i = 0; i < nelems; i++) {
+        int part = partition[i];
+        count[part]++;
+      }
+
+      // Count up the displacements for later use
+      disp[0] = 0;
+      for (int i = 0; i < size; i++) {
+        disp[i + 1] = disp[i] + count[i];
+      }
+    }
+
+    // The number of local elements
+    int nelems_local = 0;
+
+    // Send the element counts
+    MPI_Scatter(count, 1, MPI_INT, &nelems_local, 1, MPI_INT, root, comm);
+
+    int *elem_nodes_root = nullptr;
+    int *elem_nodes_local = new int[nelems_local * nnodes_per_elem];
+
+    if (rank == root) {
+      elem_nodes_root = new int[nelems * nnodes_per_elem];
+
+      for (int i = 0; i < nelems; i++) {
+        int part = partition[i];
+        int elem = disp[part];
+
+        for (int j = 0; j < nnodes_per_elem; j++) {
+          elem_nodes_root[nnodes_per_elem * elem + j] =
+              new_node_numbers[elem_nodes[nnodes_per_elem * i + j]];
+        }
+        disp[part]++;
+      }
+
+      // Reset the displacements and adjust the counts
+      disp[0] = 0;
+      for (int i = 0; i < size; i++) {
+        count[i] = nnodes_per_elem * count[i];
+        disp[i + 1] = disp[i] + count[i];
+      }
+    }
+
+    MPI_Scatterv(elem_nodes_root, count, disp, MPI_INT, elem_nodes_local,
+                 nelems_local * nnodes_per_elem, MPI_INT, root, comm);
+
+    if (rank == root) {
+      delete[] count;
+      delete[] disp;
+      delete[] elem_nodes_root;
+    }
+
+    *nelems_local_ = nelems_local;
+    *elem_nodes_local_ = elem_nodes_local;
+  }
+
+  /**
+   * @brief Match the intervals for passing the sorted halo nodes to external
+   * values
+   *
+   * @param size Size of the partition
+   * @param range Ownership ranges for each processor
+   * @param nnodes Number of nodes
+   * @param nodes Sorted node numbers
+   * @param ptr Output pointer length (size + 1)
+   */
+  static void match_intervals(int size, const int range[], int nnodes,
+                              const int nodes[], int ptr[]) {
+    if (nnodes == 0) {
+      for (int i = 0; i < size + 1; i++) {
+        ptr[i] = 0;
+      }
+      return;
+    }
+
+    for (int i = 0; i < size + 1; i++) {
+      if (range[i] <= nodes[0]) {
+        ptr[i] = 0;
+      } else if (range[i] > nodes[nnodes - 1]) {
+        ptr[i] = nnodes;
+      } else {
+        // Binary search for the interval
+        int low = 0;
+        int high = nnodes - 1;
+        int mid = low + ((high - low) / 2);
+
+        // Maintain that the variable is in the interval
+        // (vars[low],vars[high]) note that if high-low=1, then mid = high
+        while (high != mid) {
+          if (nodes[mid] == range[i]) {
+            break;
+          }
+
+          if (range[i] < nodes[mid]) {
+            high = mid;
+          } else {
+            low = mid;
+          }
+
+          mid = high - ((high - low) / 2);
+        }
+
+        ptr[i] = mid;
+      }
+    }
   }
 };
 

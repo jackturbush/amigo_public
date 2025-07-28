@@ -1,5 +1,6 @@
 import os
 import sys
+import mpi4py
 from setuptools import setup, Extension
 from subprocess import check_output
 import glob
@@ -9,17 +10,37 @@ use_openmp = "--with-openmp" in sys.argv
 if use_openmp:
     sys.argv.remove("--with-openmp")
 
+use_debug = "--with-debug" in sys.argv
+if use_debug:
+    sys.argv.remove("--with-debug")
+
+
+def get_mpi_flags():
+    # Split the output from the mpicxx command
+    args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
+
+    # Determine whether the output is an include/link/lib command
+    inc_dirs, lib_dirs, libs = [], [], []
+    for flag in args:
+        if flag[:2] == "-I":
+            inc_dirs.append(flag[2:])
+        elif flag[:2] == "-L":
+            lib_dirs.append(flag[2:])
+        elif flag[:2] == "-l":
+            libs.append(flag[2:])
+
+    return inc_dirs, lib_dirs, libs
+
 
 def get_extensions():
     from pybind11.setup_helpers import Pybind11Extension, build_ext
     import pybind11
 
-    inc_dirs, lib_dirs, libs = [], [], []
+    inc_dirs, lib_dirs, libs = get_mpi_flags()
+    inc_dirs.append(mpi4py.get_include())
 
     inc_dirs.append("include")
     headers = glob.glob("include/*.h")
-
-    pybind11_include = pybind11.get_include()
 
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
 
@@ -94,6 +115,9 @@ def get_extensions():
         compile_args += ["-fopenmp"]
         link_args += ["-fopenmp"]
         define_macros += [("AMIGO_USE_OPENMP", "1")]
+
+    if use_debug:
+        compile_args += ["-g", "-O0"]
 
     ext_modules = [
         Extension(

@@ -1354,7 +1354,7 @@ class Component:
 
         vec_cls = "std::shared_ptr<amigo::Vector<int>>"
         if wrapper_type == "group":
-            cpp += f"py::init<{vec_cls}, {vec_cls}>())"
+            cpp += f"py::init<int, {vec_cls}, {vec_cls}>())"
         else:
             cpp += f"py::init<{vec_cls}, {vec_cls}, {vec_cls}>())"
 

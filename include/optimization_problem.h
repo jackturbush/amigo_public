@@ -1,7 +1,15 @@
 #ifndef AMIGO_OPTIMIZATION_PROBLEM_H
 #define AMIGO_OPTIMIZATION_PROBLEM_H
 
+// #ifdef AMIGO_USE_MPI
+#include <mpi.h>
+
+#include "matrix_distribute.h"
+#include "vector_distribute.h"
+// #endif
+
 #include "component_group_base.h"
+#include "node_owners.h"
 #include "output_group_base.h"
 
 namespace amigo {
@@ -9,98 +17,675 @@ namespace amigo {
 template <typename T>
 class OptimizationProblem {
  public:
-  template <class ArrayType>
+  /**
+   * @brief Construct a new Optimization Problem object
+   *
+   * @param comm The MPI communicator
+   * @param data_owners The owners of the data
+   * @param var_owners The owners for the variables (inputs/multipliers)
+   * @param is_multiplier Integer array indicating if this is a multiper or not
+   * @param components The component groups for the model
+   */
   OptimizationProblem(
-      int data_size, int num_variables, int num_constraints,
-      const ArrayType constraint_index,
-      const std::vector<std::shared_ptr<ComponentGroupBase<T>>>& comps,
-      int num_outputs = 0,
-      const std::vector<std::shared_ptr<OutputGroupBase<T>>>& out_comps =
-          std::vector<std::shared_ptr<OutputGroupBase<T>>>())
-      : data_size(data_size),
-        num_variables(num_variables),
-        num_constraints(num_constraints),
-        comps(comps),
-        num_outputs(num_outputs),
-        out_comps(out_comps) {
-    is_multiplier = std::make_shared<Vector<int>>(num_variables);
-    is_multiplier->zero();
+      MPI_Comm comm, std::shared_ptr<NodeOwners> data_owners,
+      std::shared_ptr<NodeOwners> var_owners,
+      std::shared_ptr<Vector<int>> is_multiplier_,
+      const std::vector<std::shared_ptr<ComponentGroupBase<T>>>& components)
+      : comm(comm),
+        data_owners(data_owners),
+        var_owners(var_owners),
+        is_multiplier(is_multiplier_),
+        components(components),
+        data_dist(data_owners),
+        var_dist(var_owners) {
+    data_ctx = data_dist.create_context<T>();
+    var_ctx = var_dist.create_context<T>();
 
-    Vector<int>& is_mult = *is_multiplier;
+    data_vec = create_data_vector();
 
-    // Check whether this numbering of the problem is set up for block 2x2
-    order_for_block = true;
-    int sqdef_index = num_variables - num_constraints;
-    for (int i = 0; i < num_constraints; i++) {
-      if (constraint_index[i] < sqdef_index) {
-        order_for_block = false;
-      }
-
-      if (is_mult[constraint_index[i]] == 0) {
-        is_mult[constraint_index[i]] = 1;
-      } else {
-        throw std::runtime_error("Cannot use duplicate constraint indices");
-      }
+    // Set the default array (no multipliers) if none is provided
+    if (!is_multiplier) {
+      is_multiplier =
+          std::make_shared<Vector<int>>(var_owners->get_local_size());
     }
 
-    data_vec = std::make_shared<Vector<T>>(data_size);
+    csr_mat = nullptr;
+    mat_dist = nullptr;
+    mat_dist_ctx = nullptr;
+
+    dist_node_numbers = nullptr;
+    dist_data_numbers = nullptr;
+  }
+  ~OptimizationProblem() {
+    delete data_ctx;
+    delete var_ctx;
+
+    if (mat_dist) {
+      delete mat_dist;
+    }
+    if (mat_dist_ctx) {
+      delete mat_dist_ctx;
+    }
   }
 
-  int get_num_variables() const { return num_variables; }
-  int get_num_constraints() const { return num_constraints; }
+  /**
+   * @brief Get the MPI communicator
+   *
+   * @return MPI_Comm
+   */
+  MPI_Comm get_mpi_comm() { return comm; }
 
+  /**
+   * @brief Get the num variables that are owned by this processor
+   *
+   * @return int Number of variables
+   */
+  int get_num_variables() const { return var_owners->get_local_size(); }
+
+  /**
+   * @brief Create a vector object for the input and multipliers
+   *
+   * @return std::shared_ptr<Vector<T>> The vector object
+   */
   std::shared_ptr<Vector<T>> create_vector() const {
-    return std::make_shared<Vector<T>>(num_variables);
+    return std::make_shared<Vector<T>>(var_owners->get_local_size(),
+                                       var_owners->get_ext_size());
   }
-  std::shared_ptr<Vector<T>> create_output_vector() const {
-    return std::make_shared<Vector<T>>(num_outputs);
-  }
+
+  // /**
+  //  * @brief Create a output vector object for storing output values
+  //  *
+  //  * @return std::shared_ptr<Vector<T>> The output vector object
+  //  */
+  // std::shared_ptr<Vector<T>> create_output_vector() const {
+  //   return std::make_shared<Vector<T>>(output_owners->get_local_size(),
+  //                                      output_owners->get_ext_size());
+  // }
+
+  /**
+   * @brief Get the data vector object that is stored internally
+   *
+   * @return std::shared_ptr<Vector<T>> The data object stored locally
+   */
   std::shared_ptr<Vector<T>> get_data_vector() { return data_vec; }
+
+  /**
+   * @brief Set the data vector object replacing the existing one
+   *
+   * @param vec The data vector to use
+   */
+  void set_data_vector(std::shared_ptr<Vector<T>> vec) { data_vec = vec; }
+
+  /**
+   * @brief Create a data vector object
+   *
+   * @return std::shared_ptr<Vector<T>> The data vector object
+   */
+  std::shared_ptr<Vector<T>> create_data_vector() const {
+    return std::make_shared<Vector<T>>(data_owners->get_local_size(),
+                                       data_owners->get_ext_size());
+  }
+
+  /**
+   * @brief Get the multiplier indicator vector
+   *
+   * This indicates which components of the vector are multipliers and which are
+   * inputs (variables). This should not be changed.
+   *
+   * @return const std::shared_ptr<Vector<int>>
+   */
   const std::shared_ptr<Vector<int>> get_multiplier_indicator() const {
     return is_multiplier;
   }
 
-  T lagrangian(std::shared_ptr<Vector<T>> x) const {
-    T lagrange = 0.0;
-    for (size_t i = 0; i < comps.size(); i++) {
-      lagrange += comps[i]->lagrangian(*data_vec, *x);
+  /**
+   * @brief Get the node indices for distributing from local to distributed
+   * vectors
+   *
+   * @return std::shared_ptr<Vector<int>>
+   */
+  std::shared_ptr<Vector<int>> get_local_to_global_node_numbers() {
+    return dist_node_numbers;
+  }
+
+  /**
+   * @brief Get the data indices for distributing from local to distributed
+   * vectors
+   *
+   * @return std::shared_ptr<Vector<int>>
+   */
+  std::shared_ptr<Vector<int>> get_local_to_global_data_numbers() {
+    return dist_data_numbers;
+  }
+
+  /**
+   * @brief Partition the optimization problem across the available processors
+   * from the root processor.
+   *
+   * In this case, the entire problem must be set up on the root processors,
+   * with empty component groups on all remaining processors.
+   *
+   * @param root Rank of the root processor
+   * @return OptimizationProblem<T> The new OptimizationProblem on all procs
+   */
+  std::shared_ptr<OptimizationProblem<T>> partition_from_root(int root = 0) {
+    int mpi_size, mpi_rank;
+    MPI_Comm_size(comm, &mpi_size);
+    MPI_Comm_rank(comm, &mpi_rank);
+
+    int* partition = nullptr;
+    int* var_ranges = new int[mpi_size + 1];
+    int* data_ranges = new int[mpi_size + 1];
+
+    if (mpi_rank == root) {
+      // The intervals must be the same for both
+      std::vector<int> intervals;
+      auto element_nodes = get_element_nodes(intervals);
+      int nelems = intervals[intervals.size() - 1];
+
+      std::vector<int> data_intervals;
+      auto element_data = get_element_data(data_intervals);
+
+      // Number of data entries
+      const int* data_range = data_owners->get_range();
+      int ndata = data_range[root + 1] - data_range[root];
+
+      // Number of nodes
+      const int* node_range = var_owners->get_range();
+      int nnodes = node_range[root + 1] - node_range[root];
+
+      // Compute the element partition
+      OrderingUtils::compute_partition(nnodes, nelems, element_nodes, mpi_size,
+                                       &partition);
+
+      dist_node_numbers = std::make_shared<Vector<int>>(nnodes);
+      dist_data_numbers = std::make_shared<Vector<int>>(ndata);
+
+      // Set the new node numbers for the element nodes and element dataa
+      OrderingUtils::reorder_for_partition(
+          ndata, nelems, element_data, mpi_size, partition,
+          dist_data_numbers->get_array(), data_ranges);
+
+      OrderingUtils::reorder_for_partition(
+          nnodes, nelems, element_nodes, mpi_size, partition,
+          dist_node_numbers->get_array(), var_ranges);
     }
+
+    MPI_Bcast(data_ranges, mpi_size + 1, MPI_INT, root, comm);
+    MPI_Bcast(var_ranges, mpi_size + 1, MPI_INT, root, comm);
+
+    std::vector<int> new_nelems(components.size());
+    std::vector<std::shared_ptr<Vector<int>>> new_nodes(components.size());
+    std::vector<std::shared_ptr<Vector<int>>> new_data(components.size());
+
+    // Partition the element and data
+    int* part = partition;
+    for (size_t i = 0; i < components.size(); i++) {
+      int nelems;
+      int ndata_per_elem;
+      const int* elem_data;
+      components[i]->get_data_layout_data(&nelems, &ndata_per_elem, &elem_data);
+
+      int nelems_local = 0;
+      int* elem_data_local = nullptr;
+      int* new_data_numbers = nullptr;
+      if (dist_data_numbers) {
+        new_data_numbers = dist_data_numbers->get_array();
+      }
+
+      if (ndata_per_elem > 0) {
+        OrderingUtils::distribute_elements(
+            comm, nelems, ndata_per_elem, elem_data, part, new_data_numbers,
+            &nelems_local, &elem_data_local, root);
+      }
+
+      new_data[i] = std::make_shared<Vector<int>>(nelems_local * ndata_per_elem,
+                                                  0, &elem_data_local);
+
+      int nnodes_per_elem;
+      const int* elem_nodes = nullptr;
+      components[i]->get_layout_data(&nelems, &nnodes_per_elem, &elem_nodes);
+
+      int* new_node_numbers = nullptr;
+      if (dist_node_numbers) {
+        new_node_numbers = dist_node_numbers->get_array();
+      }
+
+      int* elem_nodes_local = nullptr;
+      OrderingUtils::distribute_elements(
+          comm, nelems, nnodes_per_elem, elem_nodes, part, new_node_numbers,
+          &nelems_local, &elem_nodes_local, root);
+
+      new_nelems[i] = nelems_local;
+      new_nodes[i] = std::make_shared<Vector<int>>(
+          nelems_local * nnodes_per_elem, 0, &elem_nodes_local);
+
+      // Increment the pointer into the partition
+      part += nelems;
+    }
+
+    // Reorder the data array with a local ordering
+    std::vector<int> ext_data_nodes;
+    reorder_from_global_to_local(data_ranges[mpi_rank],
+                                 data_ranges[mpi_rank + 1], new_data,
+                                 ext_data_nodes);
+    std::shared_ptr<NodeOwners> new_data_owners = std::make_shared<NodeOwners>(
+        comm, data_ranges, ext_data_nodes.size(), ext_data_nodes.data());
+
+    // Reorder the variables/constraints with a local ordering
+    std::vector<int> ext_nodes;
+    reorder_from_global_to_local(var_ranges[mpi_rank], var_ranges[mpi_rank + 1],
+                                 new_nodes, ext_nodes);
+    std::shared_ptr<NodeOwners> new_var_owners = std::make_shared<NodeOwners>(
+        comm, var_ranges, ext_nodes.size(), ext_nodes.data());
+
+    // Allocate space to store the new components
+    std::vector<std::shared_ptr<ComponentGroupBase<T>>> new_comps(
+        components.size());
+
+    // Make the new component with the new ordering
+    for (size_t i = 0; i < components.size(); i++) {
+      new_comps[i] =
+          components[i]->clone(new_nelems[i], new_data[i], new_nodes[i]);
+    }
+
+    // Free memory here
+    if (partition) {
+      delete[] partition;
+    }
+
+    std::shared_ptr<OptimizationProblem<T>> opt =
+        std::make_shared<OptimizationProblem<T>>(
+            comm, new_data_owners, new_var_owners, nullptr, new_comps);
+
+    bool distribute = false;
+    scatter_vector(is_multiplier, opt, opt->is_multiplier, root, distribute);
+
+    return opt;
+  }
+
+  /**
+   * @brief Scatter vector components from the root processor to a distributed
+   * version of the vector
+   *
+   * @tparam T1 The type of the vector
+   * @param root_vec The vector on the root processor
+   * @param dist_prob The distributed version of the problem
+   * @param dist_vec The distributed vector (output from the code)
+   * @param root The rank of the root processor
+   * @param distribute Boolean indicating whether to distribute external values
+   */
+  template <typename T1>
+  void scatter_vector(const std::shared_ptr<Vector<T1>> root_vec,
+                      const std::shared_ptr<OptimizationProblem<T>> dist_prob,
+                      std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
+                      bool distribute = true) {
+    int mpi_rank, mpi_size;
+    MPI_Comm_rank(comm, &mpi_rank);
+    MPI_Comm_size(comm, &mpi_size);
+
+    T1* reordered = nullptr;
+    int* counts = nullptr;
+    const int* disp = nullptr;
+
+    if (mpi_rank == root) {
+      int size = root_vec->get_size();
+      reordered = new T1[size];
+
+      counts = new int[mpi_size];
+      disp = dist_prob->var_owners->get_range();
+      for (int i = 0; i < mpi_size; i++) {
+        counts[i] = disp[i + 1] - disp[i];
+      }
+
+      if (dist_node_numbers) {
+        const int* new_node_numbers = dist_node_numbers->get_array();
+        const T1* array = root_vec->get_array();
+
+        for (int i = 0; i < size; i++) {
+          reordered[new_node_numbers[i]] = array[i];
+        }
+      }
+    }
+
+    MPI_Scatterv(reordered, counts, disp, get_mpi_type<T1>(),
+                 dist_vec->get_array(), dist_vec->get_size(),
+                 get_mpi_type<T1>(), root, comm);
+
+    if (reordered) {
+      delete[] reordered;
+      delete[] counts;
+    }
+
+    if (distribute) {
+      VectorDistribute::VecDistributeContext<T1>* ctx =
+          dist_prob->var_dist.template create_context<T1>();
+
+      dist_prob->var_dist.begin_forward(dist_vec, ctx);
+      dist_prob->var_dist.end_forward(dist_vec, ctx);
+
+      delete ctx;
+    }
+  }
+
+  /**
+   * @brief Gather vector components to the root processor
+   *
+   * @tparam T1 The data type of the vector
+   * @param dist_prob The distributed version of the problem
+   * @param dist_vec The distributed vector
+   * @param root_vec The vector on the root processor
+   * @param root The rank of the root processor
+   */
+  template <typename T1>
+  void gather_vector(const std::shared_ptr<OptimizationProblem<T>> dist_prob,
+                     const std::shared_ptr<Vector<T1>> dist_vec,
+                     std::shared_ptr<Vector<T1>> root_vec, int root = 0) {
+    int mpi_rank, mpi_size;
+    MPI_Comm_rank(comm, &mpi_rank);
+    MPI_Comm_size(comm, &mpi_size);
+
+    T1* reordered = nullptr;
+    int* counts = nullptr;
+    const int* disp = nullptr;
+
+    if (mpi_rank == root) {
+      int size = root_vec->get_size();
+      reordered = new T1[size];
+
+      counts = new int[mpi_size];
+      disp = dist_prob->var_owners->get_range();
+      for (int i = 0; i < mpi_size; i++) {
+        counts[i] = disp[i + 1] - disp[i];
+      }
+    }
+
+    int size = dist_prob->var_owners->get_local_size();
+    const T1* array = dist_vec->get_array();
+    MPI_Gatherv(array, size, get_mpi_type<T1>(), reordered, counts, disp,
+                get_mpi_type<T1>(), root, comm);
+
+    // Reorder the local vector
+    if (mpi_rank == root && dist_node_numbers) {
+      const int* new_node_numbers = dist_node_numbers->get_array();
+      int root_size = root_vec->get_size();
+      T1* root_array = root_vec->get_array();
+
+      for (int i = 0; i < root_size; i++) {
+        root_array[i] = reordered[new_node_numbers[i]];
+      }
+    }
+
+    if (reordered) {
+      delete[] reordered;
+      delete[] counts;
+    }
+  }
+
+  /**
+   * @brief Scatter vector components from the root processor to a distributed
+   * version of the vector
+   *
+   * @tparam T1 The type of the vector
+   * @param root_vec The vector on the root processor
+   * @param dist_prob The distributed version of the problem
+   * @param dist_vec The distributed vector (output from the code)
+   * @param root The root processor
+   * @param distribute Boolean indicating whether to distribute external values
+   */
+  template <typename T1>
+  void scatter_data_vector(
+      const std::shared_ptr<Vector<T1>> root_vec,
+      const std::shared_ptr<OptimizationProblem<T>> dist_prob,
+      std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
+      bool distribute = true) {
+    int mpi_rank, mpi_size;
+    MPI_Comm_rank(comm, &mpi_rank);
+    MPI_Comm_size(comm, &mpi_size);
+
+    T1* reordered = nullptr;
+    int* counts = nullptr;
+    const int* disp = nullptr;
+
+    if (mpi_rank == root) {
+      int size = root_vec->get_size();
+      reordered = new T1[size];
+
+      counts = new int[mpi_size];
+      disp = dist_prob->data_owners->get_range();
+      for (int i = 0; i < mpi_size; i++) {
+        counts[i] = disp[i + 1] - disp[i];
+      }
+
+      if (dist_data_numbers) {
+        const int* new_data_numbers = dist_data_numbers->get_array();
+        const T1* array = root_vec->get_array();
+
+        for (int i = 0; i < size; i++) {
+          reordered[new_data_numbers[i]] = array[i];
+        }
+      }
+    }
+
+    MPI_Scatterv(reordered, counts, disp, get_mpi_type<T1>(),
+                 dist_vec->get_array(), dist_vec->get_size(),
+                 get_mpi_type<T1>(), root, comm);
+
+    if (reordered) {
+      delete[] reordered;
+      delete[] counts;
+    }
+
+    if (distribute) {
+      VectorDistribute::VecDistributeContext<T1>* ctx =
+          dist_prob->data_dist.template create_context<T1>();
+
+      dist_prob->data_dist.begin_forward(dist_vec, ctx);
+      dist_prob->data_dist.end_forward(dist_vec, ctx);
+
+      delete ctx;
+    }
+  }
+
+  /**
+   * @brief Compute the value of the Lagrangian
+   *
+   * @param x The design variable values
+   * @return The value of the Lagrangian
+   */
+  T lagrangian(std::shared_ptr<Vector<T>> x) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
+    T lagrange = 0.0;
+    for (size_t i = 0; i < components.size(); i++) {
+      lagrange += components[i]->lagrangian(*data_vec, *x);
+    }
+
+    T value = lagrange;
+    MPI_Allreduce(&value, &lagrange, 1, get_mpi_type<T>(), MPI_SUM, comm);
     return lagrange;
   }
 
+  /**
+   * @brief Compute the gradient of the Lagrangian for all components
+   *
+   * @param x The design variable vector
+   * @param g The output gradient vector
+   */
   void gradient(const std::shared_ptr<Vector<T>> x,
-                std::shared_ptr<Vector<T>> g) const {
+                std::shared_ptr<Vector<T>> g) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
     g->zero();
-    for (size_t i = 0; i < comps.size(); i++) {
-      comps[i]->add_gradient(*data_vec, *x, *g);
+    for (size_t i = 0; i < components.size(); i++) {
+      components[i]->add_gradient(*data_vec, *x, *g);
     }
+
+    var_dist.begin_reverse_add(g, var_ctx);
+    var_dist.end_reverse_add(g, var_ctx);
   }
 
+  /**
+   * @brief Compute a Hessian-vector product with the Lagrangian
+   *
+   * @param x The design variable vector
+   * @param p The product direction
+   * @param h The output Hessian-vector product
+   */
   void hessian_product(const std::shared_ptr<Vector<T>> x,
                        const std::shared_ptr<Vector<T>> p,
-                       std::shared_ptr<Vector<T>> h) const {
+                       std::shared_ptr<Vector<T>> h) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
+    var_dist.begin_forward(p, var_ctx);
+    var_dist.end_forward(p, var_ctx);
+
     h->zero();
-    for (size_t i = 0; i < comps.size(); i++) {
-      comps[i]->add_hessian_product(*data_vec, *x, *p, *h);
+    for (size_t i = 0; i < components.size(); i++) {
+      components[i]->add_hessian_product(*data_vec, *x, *p, *h);
     }
+
+    var_dist.begin_reverse_add(h, var_ctx);
+    var_dist.end_reverse_add(h, var_ctx);
   }
 
+  /**
+   * @brief Compute the full Hessian matrix
+   *
+   * @param x The design variable values
+   * @param mat The full Hessian matrix
+   */
   void hessian(const std::shared_ptr<Vector<T>> x,
-               std::shared_ptr<CSRMat<T>> mat) const {
+               std::shared_ptr<CSRMat<T>> mat) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
     mat->zero();
-    for (size_t i = 0; i < comps.size(); i++) {
-      comps[i]->add_hessian(*data_vec, *x, *mat);
+    for (size_t i = 0; i < components.size(); i++) {
+      components[i]->add_hessian(*data_vec, *x, *var_owners, *mat);
+    }
+
+    mat_dist->begin_assembly(mat, mat_dist_ctx);
+    mat_dist->end_assembly(mat, mat_dist_ctx);
+  }
+
+  /**
+   * @brief Create the CSR matrix object that can store the Hessian
+   *
+   * @return std::shared_ptr<CSRMat<T>>
+   */
+  std::shared_ptr<CSRMat<T>> create_matrix() {
+    if (csr_mat) {
+      return csr_mat->duplicate();
+    } else {
+      std::vector<int> intervals;
+      auto element_nodes = get_element_nodes(intervals);
+      int num_elements = intervals[components.size()];
+      int num_variables =
+          var_owners->get_local_size() + var_owners->get_ext_size();
+
+      // Create the local CSR structure
+      bool include_diagonal = true;
+
+      // Columns sorted in MatrixDistribute initialization
+      bool sort_columns = false;
+
+      // Generate the non-zero pattern
+      int *rowp, *cols;
+      OrderingUtils::create_csr_from_element_conn(
+          num_variables, num_variables, num_elements, element_nodes,
+          include_diagonal, sort_columns, &rowp, &cols);
+
+      // Distribute the pattern across matrices
+      mat_dist =
+          new MatrixDistribute(comm, var_owners, var_owners, num_variables,
+                               num_variables, rowp, cols, csr_mat);
+      mat_dist_ctx = mat_dist->create_context<T>();
+
+      delete[] rowp;
+      delete[] cols;
+
+      return csr_mat;
     }
   }
 
-  std::shared_ptr<CSRMat<T>> create_csr_matrix() const {
-    std::vector<int> intervals(comps.size() + 1);
+  // void analyze(const std::shared_ptr<Vector<T>> x,
+  //              std::shared_ptr<Vector<T>> outputs) const {
+  //   outputs->zero();
+  //   for (size_t i = 0; i < output_components.size(); i++) {
+  //     output_components[i]->add_outputs(*data_vec, *x, *outputs);
+  //   }
+  // }
+
+  // void analyze_jacobian(const std::shared_ptr<Vector<T>> x,
+  //                       std::shared_ptr<CSRMat<T>> jac) const {
+  //   jac->zero();
+  //   for (size_t i = 0; i < output_components.size(); i++) {
+  //     output_components[i]->add_jacobian(*data_vec, *x, *jac);
+  //   }
+  // }
+
+  // std::shared_ptr<CSRMat<T>> create_output_csr_matrix() const {
+  //   std::vector<int> intervals(output_components.size() + 1);
+  //   intervals[0] = 0;
+  //   for (size_t i = 0; i < output_components.size(); i++) {
+  //     int length, noutputs, ninputs;
+  //     const int *outputs, *inputs;
+  //     output_components[i]->get_layout_data(&length, &noutputs, &ninputs,
+  //                                           &outputs, &inputs);
+  //     intervals[i + 1] = intervals[i] + length;
+  //   }
+
+  //   auto element = [&](int element, int* nrow, int* ncol, const int** rows,
+  //                      const int** cols) {
+  //     // upper_bound finds the first index i such that intervals[i] >
+  //     // element
+  //     auto it = std::upper_bound(intervals.begin(), intervals.end(),
+  //     element);
+
+  //     // Decrement to get the interval where element fits: intervals[idx]
+  //     // <= element < intervals[idx+1]
+  //     int idx = static_cast<int>(it - intervals.begin()) - 1;
+
+  //     int length;
+  //     const int *out, *in;
+  //     output_components[idx]->get_layout_data(&length, nrow, ncol, &out,
+  //     &in);
+
+  //     int elem = element - intervals[idx];
+  //     *rows = &out[(*nrow) * elem];
+  //     *cols = &in[(*ncol) * elem];
+  //   };
+
+  //   int num_outputs =
+  //       output_owners->get_local_size() + output_owners->get_ext_size();
+
+  //   int num_variables =
+  //       var_owners->get_local_size() + var_owners->get_ext_size();
+
+  //   return CSRMat<T>::create_from_output_data(
+  //       num_outputs, num_variables, intervals[components.size()], element);
+  // }
+
+ private:
+  /**
+   * @brief Create a functor that returns the number of nodes and node numbers,
+   * given an element index
+   *
+   * @param intervals Data structure that stores the intervals for the elements
+   * @return The functor returning number of nodes per element and element nodes
+   */
+  auto get_element_nodes(std::vector<int>& intervals) const {
+    intervals.resize(components.size() + 1);
     intervals[0] = 0;
-    for (size_t i = 0; i < comps.size(); i++) {
-      int length, ncomp;
+    for (size_t i = 0; i < components.size(); i++) {
+      int num_elems, nnodes_per_elem;
       const int* data;
-      comps[i]->get_layout_data(&length, &ncomp, &data);
-      intervals[i + 1] = intervals[i] + length;
+      components[i]->get_layout_data(&num_elems, &nnodes_per_elem, &data);
+      intervals[i + 1] = intervals[i] + num_elems;
     }
 
     auto element_nodes = [&](int element, const int** ptr) {
@@ -112,54 +697,40 @@ class OptimizationProblem {
       // <= element < intervals[idx+1]
       int idx = static_cast<int>(it - intervals.begin()) - 1;
 
-      int length, ncomp;
+      int num_elems, nnodes_per_elem;
       const int* data;
-      comps[idx]->get_layout_data(&length, &ncomp, &data);
+      components[idx]->get_layout_data(&num_elems, &nnodes_per_elem, &data);
 
       int elem = element - intervals[idx];
-      *ptr = &data[ncomp * elem];
-      return ncomp;
+      if (nnodes_per_elem > 0) {
+        *ptr = &data[nnodes_per_elem * elem];
+      } else {
+        *ptr = nullptr;
+      }
+      return nnodes_per_elem;
     };
 
-    int sqdef_index = -1;
-    if (order_for_block) {
-      sqdef_index = num_variables - num_constraints;
-    }
-
-    return CSRMat<T>::create_from_element_conn(num_variables, num_variables,
-                                               intervals[comps.size()],
-                                               element_nodes, sqdef_index);
+    return element_nodes;
   }
 
-  void analyze(const std::shared_ptr<Vector<T>> x,
-               std::shared_ptr<Vector<T>> outputs) const {
-    outputs->zero();
-    for (size_t i = 0; i < out_comps.size(); i++) {
-      out_comps[i]->add_outputs(*data_vec, *x, *outputs);
-    }
-  }
-
-  void analyze_jacobian(const std::shared_ptr<Vector<T>> x,
-                        std::shared_ptr<CSRMat<T>> jac) const {
-    jac->zero();
-    for (size_t i = 0; i < out_comps.size(); i++) {
-      out_comps[i]->add_jacobian(*data_vec, *x, *jac);
-    }
-  }
-
-  std::shared_ptr<CSRMat<T>> create_output_csr_matrix() const {
-    std::vector<int> intervals(out_comps.size() + 1);
+  /**
+   * @brief Create a functor that returns the number of nodes and node numbers
+   * for the data, given an element index
+   *
+   * @param intervals Data structure that stores the intervals for the elements
+   * @return The functor returning the data per element and data indices
+   */
+  auto get_element_data(std::vector<int>& intervals) const {
+    intervals.resize(components.size() + 1);
     intervals[0] = 0;
-    for (size_t i = 0; i < out_comps.size(); i++) {
-      int length, noutputs, ninputs;
-      const int *outputs, *inputs;
-      out_comps[i]->get_layout_data(&length, &noutputs, &ninputs, &outputs,
-                                    &inputs);
-      intervals[i + 1] = intervals[i] + length;
+    for (size_t i = 0; i < components.size(); i++) {
+      int num_elems, ndata_per_elem;
+      const int* data;
+      components[i]->get_data_layout_data(&num_elems, &ndata_per_elem, &data);
+      intervals[i + 1] = intervals[i] + num_elems;
     }
 
-    auto element = [&](int element, int* nrow, int* ncol, const int** rows,
-                       const int** cols) {
+    auto element_nodes = [&](int element, const int** ptr) {
       // upper_bound finds the first index i such that intervals[i] >
       // element
       auto it = std::upper_bound(intervals.begin(), intervals.end(), element);
@@ -168,40 +739,131 @@ class OptimizationProblem {
       // <= element < intervals[idx+1]
       int idx = static_cast<int>(it - intervals.begin()) - 1;
 
-      int length;
-      const int *out, *in;
-      out_comps[idx]->get_layout_data(&length, nrow, ncol, &out, &in);
+      int num_elems, ndata_per_elem;
+      const int* data;
+      components[idx]->get_data_layout_data(&num_elems, &ndata_per_elem, &data);
 
       int elem = element - intervals[idx];
-      *rows = &out[(*nrow) * elem];
-      *cols = &in[(*ncol) * elem];
+      if (ndata_per_elem > 0) {
+        *ptr = &data[ndata_per_elem * elem];
+      } else {
+        *ptr = nullptr;
+      }
+      return ndata_per_elem;
     };
 
-    return CSRMat<T>::create_from_output_data(num_outputs, num_variables,
-                                              intervals[comps.size()], element);
+    return element_nodes;
   }
 
- private:
-  int data_size;        // Size of the data vector
-  int num_variables;    // Number of variables
-  int num_constraints;  // Number of constraints
+  /**
+   * @brief Compute a reordering from the global node numbers to a local
+   * ordering
+   *
+   * If the node numbers fall in the range:
+   *
+   * lower <= node < upper
+   *
+   * Then the node ordered locally as
+   *
+   * local = node - lower
+   *
+   * Otherwise a unique, sorted list of external nodes (ext_nodes) is computed
+   * so that
+   *
+   * node = ext_nodes[i]
+   *
+   * and
+   *
+   * local = (upper - lower) + i
+   *
+   * @param lower Lower global node index
+   * @param upper Upper global node index
+   * @param nodes Array of vectors for the local components
+   * @param ext_nodes External nodes
+   */
+  void reorder_from_global_to_local(
+      int lower, int upper, std::vector<std::shared_ptr<Vector<int>>>& nodes,
+      std::vector<int>& ext_nodes) {
+    // Estimate an upper bound for the size here - maybe there's a better
+    // approach for this...
+    ext_nodes.reserve(4 * (upper - lower));
+
+    // Identify nodes that
+    for (size_t i = 0; i < nodes.size(); i++) {
+      int* array = nodes[i]->get_array();
+      int size = nodes[i]->get_size();
+
+      for (int j = 0; j < size; j++) {
+        // Check if this is an external node
+        if (array[j] < lower || array[j] >= upper) {
+          ext_nodes.push_back(array[j]);
+        }
+      }
+    }
+
+    // Sort the array and remove duplicates
+    std::sort(ext_nodes.begin(), ext_nodes.end());
+    ext_nodes.erase(std::unique(ext_nodes.begin(), ext_nodes.end()),
+                    ext_nodes.end());
+
+    // Set the node numbers based on the local ordering
+    for (size_t i = 0; i < nodes.size(); i++) {
+      int* array = nodes[i]->get_array();
+      int size = nodes[i]->get_size();
+
+      for (int j = 0; j < size; j++) {
+        // Check if this is an external node
+        if (array[j] >= lower && array[j] < upper) {
+          array[j] = array[j] - lower;
+        } else {
+          auto it =
+              std::lower_bound(ext_nodes.begin(), ext_nodes.end(), array[j]);
+          if (it != ext_nodes.end() && *it == array[j]) {
+            array[j] = (upper - lower) + (it - ext_nodes.begin());
+          }
+        }
+      }
+    }
+  }
+
+  // The MPI communicator
+  MPI_Comm comm;
+
+  // Node owner data for the data and variables
+  std::shared_ptr<NodeOwners> data_owners;
+  std::shared_ptr<NodeOwners> var_owners;
+
+  // Array indicating which variables are multipliers
+  std::shared_ptr<Vector<int>> is_multiplier;
 
   // Component groups for the optimization problem
-  std::vector<std::shared_ptr<ComponentGroupBase<T>>> comps;
-
-  int num_outputs;  // Number of outputs
+  std::vector<std::shared_ptr<ComponentGroupBase<T>>> components;
 
   // Component output groups for the analysis
-  std::vector<std::shared_ptr<OutputGroupBase<T>>> out_comps;
+  // std::shared_ptr<NodeOwners> output_owners;
+  // std::vector<std::shared_ptr<OutputGroupBase<T>>> output_components;
 
-  // Is the optimization problem ordered for a 2x2 block structure
-  bool order_for_block;
+  // Variable information
+  VectorDistribute data_dist;
+  VectorDistribute var_dist;
+  VectorDistribute::VecDistributeContext<T>* data_ctx;
+  VectorDistribute::VecDistributeContext<T>* var_ctx;
+
+  // Output information
+  // VectorDistribute output_dist;
+  // VectorDistribute::VecDistributeContext<T>* output_ctx;
 
   // The shared data vector
   std::shared_ptr<Vector<T>> data_vec;
 
-  // Is this variable a multiplier?
-  std::shared_ptr<Vector<int>> is_multiplier;
+  // Node numbers created by
+  std::shared_ptr<Vector<int>> dist_node_numbers;
+  std::shared_ptr<Vector<int>> dist_data_numbers;
+
+  // Information about the Hessian matrix
+  std::shared_ptr<CSRMat<T>> csr_mat;
+  MatrixDistribute* mat_dist;
+  MatrixDistribute::MatDistributeContext<T>* mat_dist_ctx;
 };
 
 }  // namespace amigo

@@ -1,3 +1,4 @@
+#include <mpi4py/mpi4py.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -192,7 +193,10 @@ py::array_t<int> reorder_model(amigo::OrderingType order_type,
 }
 
 PYBIND11_MODULE(amigo, mod) {
-  mod.doc() = "Amigo: A friendly library for MDO on GPUs";
+  mod.doc() = "Amigo: A friendly library for MDO on HPC";
+
+  // Import mpi4py
+  import_mpi4py();
 
   mod.attr("A2D_INCLUDE_PATH") = A2D_INCLUDE_PATH;
   mod.attr("AMIGO_INCLUDE_PATH") = AMIGO_INCLUDE_PATH;
@@ -211,19 +215,26 @@ PYBIND11_MODULE(amigo, mod) {
       mod, "CSRMat")
       .def("get_nonzero_structure",
            [](amigo::CSRMat<double> &mat) {
-             py::array_t<int> rowp(mat.nrows + 1);
-             std::memcpy(rowp.mutable_data(), mat.rowp,
-                         (mat.nrows + 1) * sizeof(int));
+             int nrows, ncols, nnz;
+             const int *mat_rowp, *mat_cols;
+             mat.get_data(&nrows, &ncols, &nnz, &mat_rowp, &mat_cols, nullptr);
 
-             py::array_t<int> cols(mat.nnz);
-             std::memcpy(cols.mutable_data(), mat.cols, mat.nnz * sizeof(int));
-             return py::make_tuple(mat.nrows, mat.ncols, mat.nnz, rowp, cols);
+             py::array_t<int> rowp(nrows + 1);
+             std::memcpy(rowp.mutable_data(), mat_rowp,
+                         (nrows + 1) * sizeof(int));
+
+             py::array_t<int> cols(nnz);
+             std::memcpy(cols.mutable_data(), mat_cols, nnz * sizeof(int));
+             return py::make_tuple(nrows, ncols, nnz, rowp, cols);
            })
       .def("get_data",
            [](amigo::CSRMat<double> &mat) -> py::array_t<double> {
-             py::array_t<double> data(mat.nnz);
-             std::memcpy(data.mutable_data(), mat.data,
-                         mat.nnz * sizeof(double));
+             int nnz;
+             double *mat_data;
+             mat.get_data(nullptr, nullptr, &nnz, nullptr, nullptr, &mat_data);
+
+             py::array_t<double> data(nnz);
+             std::memcpy(data.mutable_data(), mat_data, nnz * sizeof(double));
              return data;
            })
       .def("extract_submatrix",
@@ -239,6 +250,8 @@ PYBIND11_MODULE(amigo, mod) {
              self.extract_submatrix_values(rows.size(), rows.data(),
                                            cols.size(), cols.data(), mat);
            })
+      .def("get_row_owners", &amigo::CSRMat<double>::get_row_owners)
+      .def("get_column_owners", &amigo::CSRMat<double>::get_column_owners)
       .def("gauss_seidel", &amigo::CSRMat<double>::gauss_seidel)
       .def("mult", &amigo::CSRMat<double>::mult)
       .def("add_diagonal", &amigo::CSRMat<double>::add_diagonal);
@@ -253,36 +266,85 @@ PYBIND11_MODULE(amigo, mod) {
              std::shared_ptr<amigo::OutputGroupBase<double>>>(
       mod, "OutputGroupBase");
 
+  py::class_<amigo::NodeOwners, std::shared_ptr<amigo::NodeOwners>>(
+      mod, "NodeOwners")
+      .def(py::init([](py::object pyobj, py::array_t<int> ranges) {
+        int size = 1;
+        MPI_Comm comm = MPI_COMM_SELF;
+        if (!pyobj.is_none()) {
+          comm = *PyMPIComm_Get(pyobj.ptr());
+          MPI_Comm_size(comm, &size);
+        }
+        if (ranges.size() != size + 1) {
+          throw std::runtime_error(
+              "Ranges must be of length MPI_Comm_size + 1");
+        }
+        return std::make_shared<amigo::NodeOwners>(comm, ranges.data());
+      }))
+      .def("get_mpi_comm",
+           [](const amigo::NodeOwners &self) {
+             return py::reinterpret_steal<py::object>(
+                 PyMPIComm_New(self.get_mpi_comm()));
+           })
+      .def("get_local_size", &amigo::NodeOwners::get_local_size);
+
   py::class_<amigo::OptimizationProblem<double>,
              std::shared_ptr<amigo::OptimizationProblem<double>>>(
       mod, "OptimizationProblem")
-      .def(py::init(
-          [](int data_size, int num_variables, int num_outputs,
-             py::array_t<int> con_indices,
-             std::vector<std::shared_ptr<amigo::ComponentGroupBase<double>>>
-                 &comps,
-             std::vector<std::shared_ptr<amigo::OutputGroupBase<double>>>
-                 &out_comps) {
-            int num_constraints = con_indices.size();
-            return std::make_shared<amigo::OptimizationProblem<double>>(
-                data_size, num_variables, num_constraints,
-                con_indices.mutable_data(), comps, num_outputs, out_comps);
-          }))
+      .def(py::init([](py::object pyobj,
+                       std::shared_ptr<amigo::NodeOwners> data_owners,
+                       std::shared_ptr<amigo::NodeOwners> var_owners,
+                       std::shared_ptr<amigo::Vector<int>> is_multiplier,
+                       const std::vector<std::shared_ptr<
+                           amigo::ComponentGroupBase<double>>> &components) {
+        MPI_Comm comm = MPI_COMM_SELF;
+        if (!pyobj.is_none()) {
+          comm = *PyMPIComm_Get(pyobj.ptr());
+        }
+        return std::make_shared<amigo::OptimizationProblem<double>>(
+            comm, data_owners, var_owners, is_multiplier, components);
+      }))
+      .def("get_num_variables",
+           &amigo::OptimizationProblem<double>::get_num_variables)
+      .def("partition_from_root",
+           &amigo::OptimizationProblem<double>::partition_from_root,
+           py::arg("root") = 0)
+      .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
+      .def("create_data_vector",
+           &amigo::OptimizationProblem<double>::create_data_vector)
       .def("get_data_vector",
            &amigo::OptimizationProblem<double>::get_data_vector)
-      .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
-      .def("create_output_vector",
-           &amigo::OptimizationProblem<double>::create_output_vector)
+      .def("set_data_vector",
+           &amigo::OptimizationProblem<double>::set_data_vector)
+      .def(
+          "get_local_to_global_node_numbers",
+          &amigo::OptimizationProblem<double>::get_local_to_global_node_numbers)
+      .def(
+          "get_local_to_global_data_numbers",
+          &amigo::OptimizationProblem<double>::get_local_to_global_data_numbers)
       .def("lagrangian", &amigo::OptimizationProblem<double>::lagrangian)
       .def("gradient", &amigo::OptimizationProblem<double>::gradient)
-      .def("create_csr_matrix",
-           &amigo::OptimizationProblem<double>::create_csr_matrix)
+      .def("create_matrix", &amigo::OptimizationProblem<double>::create_matrix)
       .def("hessian", &amigo::OptimizationProblem<double>::hessian)
-      .def("analyze", &amigo::OptimizationProblem<double>::analyze)
-      .def("create_output_csr_matrix",
-           &amigo::OptimizationProblem<double>::create_output_csr_matrix)
-      .def("analyze_jacobian",
-           &amigo::OptimizationProblem<double>::analyze_jacobian);
+      .def("scatter_vector",
+           &amigo::OptimizationProblem<double>::scatter_vector<double>,
+           py::arg("root_vec"), py::arg("dist_problem"), py::arg("dist_vec"),
+           py::arg("root") = 0, py::arg("distribute") = true)
+      .def("gather_vector",
+           &amigo::OptimizationProblem<double>::gather_vector<double>,
+           py::arg("dist_problem"), py::arg("dist_vec"), py::arg("root_vec"),
+           py::arg("root") = 0)
+      .def("scatter_data_vector",
+           &amigo::OptimizationProblem<double>::scatter_data_vector<double>,
+           py::arg("root_vec"), py::arg("dist_problem"), py::arg("dist_vec"),
+           py::arg("root") = 0, py::arg("distribute") = true);
+  // .def("create_output_vector",
+  //      &amigo::OptimizationProblem<double>::create_output_vector)
+  // .def("analyze", &amigo::OptimizationProblem<double>::analyze)
+  // .def("create_output_csr_matrix",
+  //      &amigo::OptimizationProblem<double>::create_output_csr_matrix)
+  // .def("analyze_jacobian",
+  //      &amigo::OptimizationProblem<double>::analyze_jacobian);
 
   py::class_<amigo::AliasTracker<int>>(mod, "AliasTracker")
       .def(py::init<int>(), py::arg("size"))

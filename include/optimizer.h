@@ -1,7 +1,9 @@
 #ifndef AMIGO_OPTIMIZER_H
 #define AMIGO_OPTIMIZER_H
 
-#include <iostream>
+#include <mpi.h>
+
+#include <cstdio>
 
 #include "component_group_base.h"
 #include "optimization_problem.h"
@@ -33,9 +35,9 @@ class OptVector {
     // Set the design variable values in xs as well
     Vector<T>& x_ = *x;
     Vector<T>& xs_ = *xs;
-    int num_variables = problem->get_num_variables();
+    int size = problem->get_num_variables();
     const Vector<int>& is_multiplier = *problem->get_multiplier_indicator();
-    for (int i = 0; i < num_variables; i++) {
+    for (int i = 0; i < size; i++) {
       if (!is_multiplier[i]) {
         xs_[i] = x_[i];
       }
@@ -158,6 +160,7 @@ class InteriorPointOptimizer {
                          std::shared_ptr<Vector<T>> lower,
                          std::shared_ptr<Vector<T>> upper)
       : problem(problem), lower(lower), upper(upper) {
+    comm = problem->get_mpi_comm();
     num_variables = problem->get_num_variables();
   }
 
@@ -327,7 +330,9 @@ class InteriorPointOptimizer {
     }
 
     // Compute the residual norm
-    T norm = rx.dot(rx) + rxs.dot(rxs) + rzl.dot(rzl) + rzu.dot(rzu);
+    T local_norm = rx.dot(rx) + rxs.dot(rxs) + rzl.dot(rzl) + rzu.dot(rzu);
+    T norm;
+    MPI_Allreduce(&local_norm, &norm, 1, get_mpi_type<T>(), MPI_SUM, comm);
 
     return std::sqrt(norm);
   }
@@ -575,6 +580,13 @@ class InteriorPointOptimizer {
         }
       }
     }
+
+    T alphas[2], max_alphas[2];
+    alphas[0] = alpha_x_max;
+    alphas[1] = alpha_z_max;
+    MPI_Allreduce(alphas, max_alphas, 2, get_mpi_type<T>(), MPI_MIN, comm);
+    alpha_x_max = max_alphas[0];
+    alpha_z_max = max_alphas[1];
   }
 
   /**
@@ -757,6 +769,9 @@ class InteriorPointOptimizer {
 
   // Lower and upper bounds for the design variables
   std::shared_ptr<Vector<T>> lower, upper;
+
+  // The MPI communicator
+  MPI_Comm comm;
 
   // The number of primal and dual variables
   int num_variables;
