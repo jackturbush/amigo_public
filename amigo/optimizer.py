@@ -10,11 +10,6 @@ try:
 except:
     PETSc = None
 
-try:
-    from petsc4py import PETSc
-except:
-    PETSc = None
-
 
 class DirectScipySolver:
     def __init__(self, problem):
