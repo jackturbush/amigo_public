@@ -21,7 +21,7 @@ try:
 except:
     COMM_WORLD = None
 
-if sys.version_info < (3, 9):
+if sys.version_info < (3, 11):
     Self = object
     from typing import Union, List
 else:

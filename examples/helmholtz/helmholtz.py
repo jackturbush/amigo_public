@@ -151,6 +151,13 @@ parser.add_argument(
     help="Enable OpenMP",
 )
 parser.add_argument(
+    "--with-debug",
+    dest="use_debug",
+    action="store_true",
+    default=False,
+    help="Enable debug compiler flags",
+)
+parser.add_argument(
     "--order-type",
     choices=["amd", "nd", "natural"],
     default="amd",
@@ -220,7 +227,10 @@ if args.build:
         define_macros = [("AMIGO_USE_OPENMP", "1")]
 
     model.build_module(
-        compile_args=compile_args, link_args=link_args, define_macros=define_macros
+        compile_args=compile_args,
+        link_args=link_args,
+        define_macros=define_macros,
+        debug=args.use_debug,
     )
 
 start = time.perf_counter()
@@ -306,6 +316,13 @@ else:
     ksp.setType("gmres")
     pc = ksp.getPC()
     pc.setType("asm")
+
+    def monitor(ksp, its, rnorm):
+        if comm.rank == 0:
+            print("r[%3d]: %12.3e"%(its, rnorm))
+
+    # Set the monitor
+    ksp.setMonitor(monitor)
 
     # Create the solution and right-hand-side
     petsc_ans = petsc_mat.createVecRight()

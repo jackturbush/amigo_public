@@ -15,7 +15,7 @@ class MatrixDistribute {
   class MatDistributeContext {
    public:
     MatDistributeContext(int tag, int num_ext_procs, int num_in_procs,
-                         int num_in_entries) {
+                         int num_in_entries) : tag(tag) {
       in_A = new T[num_in_entries];
       in_requests = new MPI_Request[num_in_procs];
       ext_requests = new MPI_Request[num_ext_procs];

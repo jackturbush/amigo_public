@@ -85,8 +85,8 @@ def get_extensions():
         inc_dirs.append(metis_include)
         lib_dirs.append(metis_lib)
         libs.append("metis")
-        if sys.platform != "win32":  # Only enable METIS macro on non-Windows
-            define_macros += [("AMIGO_USE_METIS", "1")]
+        # if sys.platform != "win32":  # Only enable METIS macro on non-Windows
+        #     define_macros += [("AMIGO_USE_METIS", "1")]
 
     # Escape backslashes for Windows paths in C++ string literals
     a2d_include_escaped = a2d_include.replace("\\", "\\\\")
