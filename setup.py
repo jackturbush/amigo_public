@@ -16,20 +16,30 @@ if use_debug:
 
 
 def get_mpi_flags():
-    # Split the output from the mpicxx command
-    args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
+    # Windows-specific MPI handling
+    if sys.platform == "win32":
+        # Microsoft MPI SDK paths
+        mpi_sdk_base = r"C:\Program Files (x86)\Microsoft SDKs\MPI"
+        inc_dirs = [os.path.join(mpi_sdk_base, "Include")]
+        lib_dirs = [os.path.join(mpi_sdk_base, "Lib", "x64")]
+        libs = ["msmpi"]  # Microsoft MPI library name
+        return inc_dirs, lib_dirs, libs
+    else:
+        # Unix/Linux/Mac systems - use mpicxx
+        # Split the output from the mpicxx command
+        args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
 
-    # Determine whether the output is an include/link/lib command
-    inc_dirs, lib_dirs, libs = [], [], []
-    for flag in args:
-        if flag[:2] == "-I":
-            inc_dirs.append(flag[2:])
-        elif flag[:2] == "-L":
-            lib_dirs.append(flag[2:])
-        elif flag[:2] == "-l":
-            libs.append(flag[2:])
+        # Determine whether the output is an include/link/lib command
+        inc_dirs, lib_dirs, libs = [], [], []
+        for flag in args:
+            if flag[:2] == "-I":
+                inc_dirs.append(flag[2:])
+            elif flag[:2] == "-L":
+                lib_dirs.append(flag[2:])
+            elif flag[:2] == "-l":
+                libs.append(flag[2:])
 
-    return inc_dirs, lib_dirs, libs
+        return inc_dirs, lib_dirs, libs
 
 
 def get_extensions():
@@ -67,15 +77,16 @@ def get_extensions():
         a2d_include = os.path.join(home, "git", "a2d", "include")
         amigo_include = os.path.join(home, "git", "amigo", "include")
 
-    inc_dirs += [
-        os.path.join(
-            os.environ.get("HOME"), "git", "tacs", "extern", "metis", "include"
-        )
-    ]
-    lib_dirs.append(
-        os.path.join(os.environ.get("HOME"), "git", "tacs", "extern", "metis", "lib")
-    )
-    libs.append("metis")
+    # Add METIS if available (optional on Windows)
+    metis_include = os.path.join(home, "git", "tacs", "extern", "metis", "include")
+    metis_lib = os.path.join(home, "git", "tacs", "extern", "metis", "lib")
+    
+    if os.path.exists(metis_include) and os.path.exists(metis_lib):
+        inc_dirs.append(metis_include)
+        lib_dirs.append(metis_lib)
+        libs.append("metis")
+        if sys.platform != "win32":  # Only enable METIS macro on non-Windows
+            define_macros += [("AMIGO_USE_METIS", "1")]
 
     # Escape backslashes for Windows paths in C++ string literals
     a2d_include_escaped = a2d_include.replace("\\", "\\\\")
@@ -102,7 +113,7 @@ def get_extensions():
         openblas_root = r"C:\libs\openblas"
         inc_dirs += [os.path.join(openblas_root, "include")]
         lib_dirs += [os.path.join(openblas_root, "lib")]
-        libs += ["libopenblas"]
+        libs += ["openblas"]
     elif sys.platform == "darwin":
         compile_args += ["-std=c++17"]
         define_macros += [("AMIGO_USE_METIS", "1")]

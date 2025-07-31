@@ -912,23 +912,34 @@ class Model:
         from subprocess import check_output
         import pybind11
         import sys
+        import os
         from pybind11.setup_helpers import Pybind11Extension, build_ext
 
         def get_mpi_flags():
-            # Split the output from the mpicxx command
-            args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
+            # Windows-specific MPI handling
+            if sys.platform == "win32":
+                # Microsoft MPI SDK paths
+                mpi_sdk_base = r"C:\Program Files (x86)\Microsoft SDKs\MPI"
+                inc_dirs = [os.path.join(mpi_sdk_base, "Include")]
+                lib_dirs = [os.path.join(mpi_sdk_base, "Lib", "x64")]
+                libs = ["msmpi"]  # Microsoft MPI library name
+                return inc_dirs, lib_dirs, libs
+            else:
+                # Unix/Linux/Mac systems - use mpicxx
+                # Split the output from the mpicxx command
+                args = check_output(["mpicxx", "-show"]).decode("utf-8").split()
 
-            # Determine whether the output is an include/link/lib command
-            inc_dirs, lib_dirs, libs = [], [], []
-            for flag in args:
-                if flag[:2] == "-I":
-                    inc_dirs.append(flag[2:])
-                elif flag[:2] == "-L":
-                    lib_dirs.append(flag[2:])
-                elif flag[:2] == "-l":
-                    libs.append(flag[2:])
+                # Determine whether the output is an include/link/lib command
+                inc_dirs, lib_dirs, libs = [], [], []
+                for flag in args:
+                    if flag[:2] == "-I":
+                        inc_dirs.append(flag[2:])
+                    elif flag[:2] == "-L":
+                        lib_dirs.append(flag[2:])
+                    elif flag[:2] == "-l":
+                        libs.append(flag[2:])
 
-            return inc_dirs, lib_dirs, libs
+                return inc_dirs, lib_dirs, libs
 
         # Append the extra compile args list based on system type (allows for
         # compilaton on Windows vs. Linux/Mac)
@@ -952,13 +963,21 @@ class Model:
         except:
             inc_dirs, lib_dirs, libs = [], [], []
 
+        # Add platform-specific libraries
+        if sys.platform == "win32":
+            openblas_root = r"C:\libs\openblas"
+            inc_dirs += [os.path.join(openblas_root, "include")]
+            lib_dirs += [os.path.join(openblas_root, "lib")]
+            libs += ["openblas"]
+
         # Create the Extension
+        all_inc_dirs = inc_dirs + [pybind11_include, amigo_include, a2d_include]
         ext_modules = [
             Extension(
                 self.module_name,
                 sources=[f"{self.module_name}.cpp"],
                 depends=[f"{self.module_name}.h"],
-                include_dirs=inc_dirs,
+                include_dirs=all_inc_dirs,
                 libraries=libs,
                 library_dirs=lib_dirs,
                 extra_compile_args=compile_args,
