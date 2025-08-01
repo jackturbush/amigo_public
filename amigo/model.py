@@ -251,7 +251,7 @@ class ComponentGroup:
         return array
 
     def create_group(self, module_name: str):
-        if not self.comp_obj.is_compute_empty() or not self.comp_obj.is_analyze_empty():
+        if not self.comp_obj.is_compute_empty() or not self.comp_obj.is_output_empty():
             data_array = self.get_indices(self.data)
             vec_array = self.get_indices(self.vars)
             out_array = self.get_indices(self.outputs)
@@ -853,15 +853,15 @@ class Model:
             class_name = self.comp[name].class_name
             if class_name not in class_names:
                 compute_empty = self.comp[name].comp_obj.is_compute_empty()
-                analyze_empty = self.comp[name].comp_obj.is_analyze_empty()
-                if not compute_empty or not analyze_empty:
+                output_empty = self.comp[name].comp_obj.is_output_empty()
+                if not compute_empty or not output_empty:
                     class_names[class_name] = True
 
                     # Generate the C++
                     cpp += self.comp[name].comp_obj.generate_cpp()
 
                 # Generate the wrappers
-                if not compute_empty or not analyze_empty:
+                if not compute_empty or not output_empty:
                     py11 += (
                         self.comp[name].comp_obj.generate_pybind11(mod_ident=mod_ident)
                         + ";\n"

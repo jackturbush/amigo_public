@@ -31,8 +31,10 @@ class ComponentGroupBase {
   // Output functions
   virtual void add_output(const Vector<T>& data, const Vector<T>& vec,
                           Vector<T>& output) const {}
-  virtual void add_output_jacobian(const Vector<T>& data, const Vector<T>& vec,
-                                   CSRMat<T>& jac) const {}
+  virtual void add_input_jacobian(const Vector<T>& data, const Vector<T>& vec,
+                                  CSRMat<T>& jac) const {}
+  virtual void add_data_jacobian(const Vector<T>& data, const Vector<T>& vec,
+                                 CSRMat<T>& jac) const {}
 
   // Ordering information
   virtual void get_data_layout_data(int* num_elements, int* nodes_per_elem,
@@ -40,8 +42,7 @@ class ComponentGroupBase {
   virtual void get_layout_data(int* num_elements, int* nodes_per_elem,
                                const int** array) const {}
   virtual void get_output_layout_data(int* num_elements, int* outputs_per_elem,
-                                      int* nodes_per_elem, const int** outputs,
-                                      const int** inputs) const {}
+                                      const int** array) const {}
 };
 
 template <typename R, class... Ts>

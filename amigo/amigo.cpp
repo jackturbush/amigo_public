@@ -341,11 +341,16 @@ PYBIND11_MODULE(amigo, mod) {
            py::arg("root") = 0, py::arg("distribute") = true)
       .def("create_output_vector",
            &amigo::OptimizationProblem<double>::create_output_vector)
-      .def("analyze", &amigo::OptimizationProblem<double>::analyze)
-      .def("create_output_matrix",
-           &amigo::OptimizationProblem<double>::create_output_matrix)
-      .def("analyze_jacobian",
-           &amigo::OptimizationProblem<double>::analyze_jacobian);
+      .def("compute_output",
+           &amigo::OptimizationProblem<double>::compute_output)
+      .def("create_input_jacobian",
+           &amigo::OptimizationProblem<double>::create_input_jacobian)
+      .def("create_data_jacobian",
+           &amigo::OptimizationProblem<double>::create_data_jacobian)
+      .def("input_jacobian",
+           &amigo::OptimizationProblem<double>::input_jacobian)
+      .def("data_jacobian",
+           &amigo::OptimizationProblem<double>::input_jacobian);
 
   py::class_<amigo::AliasTracker<int>>(mod, "AliasTracker")
       .def(py::init<int>(), py::arg("size"))

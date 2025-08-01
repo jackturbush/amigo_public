@@ -61,9 +61,13 @@ class OptimizationProblem {
     mat_dist = nullptr;
     mat_dist_ctx = nullptr;
 
-    jac = nullptr;
-    jac_dist = nullptr;
-    jac_dist_ctx = nullptr;
+    input_jac = nullptr;
+    input_jac_dist = nullptr;
+    input_jac_dist_ctx = nullptr;
+
+    data_jac = nullptr;
+    data_jac_dist = nullptr;
+    data_jac_dist_ctx = nullptr;
   }
   ~OptimizationProblem() {
     delete data_ctx;
@@ -76,11 +80,17 @@ class OptimizationProblem {
     if (mat_dist_ctx) {
       delete mat_dist_ctx;
     }
-    if (jac_dist) {
-      delete jac_dist;
+    if (input_jac_dist) {
+      delete input_jac_dist;
     }
-    if (jac_dist_ctx) {
-      delete jac_dist_ctx;
+    if (input_jac_dist_ctx) {
+      delete input_jac_dist_ctx;
+    }
+    if (input_jac_dist) {
+      delete input_jac_dist;
+    }
+    if (input_jac_dist_ctx) {
+      delete input_jac_dist_ctx;
     }
   }
 
@@ -297,8 +307,7 @@ class OptimizationProblem {
       int outputs_per_elem;
       const int* elem_outputs = nullptr;
       components[i]->get_output_layout_data(&nelems, &outputs_per_elem,
-                                            &nnodes_per_elem, &elem_outputs,
-                                            &elem_nodes);
+                                            &elem_outputs);
 
       int* new_output_numbers = nullptr;
       if (dist_output_numbers) {
@@ -682,8 +691,8 @@ class OptimizationProblem {
    * @param x The design variable vector
    * @param outputs The vector of outputs
    */
-  void analyze(const std::shared_ptr<Vector<T>> x,
-               std::shared_ptr<Vector<T>> outputs) {
+  void compute_output(const std::shared_ptr<Vector<T>> x,
+                      std::shared_ptr<Vector<T>> outputs) {
     var_dist.begin_forward(x, var_ctx);
     var_dist.end_forward(x, var_ctx);
 
@@ -697,41 +706,61 @@ class OptimizationProblem {
   }
 
   /**
-   * @brief Compute the Jacobian matrix
+   * @brief Compute the input Jacobian matrix
    *
    * @param x The design variable vector
    * @param jacobian The Jacobian matrix
    */
-  void analyze_jacobian(const std::shared_ptr<Vector<T>> x,
-                        std::shared_ptr<CSRMat<T>> jacobian) {
+  void input_jacobian(const std::shared_ptr<Vector<T>> x,
+                      std::shared_ptr<CSRMat<T>> jacobian) {
     var_dist.begin_forward(x, var_ctx);
     var_dist.end_forward(x, var_ctx);
 
     jacobian->zero();
     for (size_t i = 0; i < components.size(); i++) {
-      components[i]->add_output_jacobian(*data_vec, *x, *jacobian);
+      components[i]->add_input_jacobian(*data_vec, *x, *jacobian);
     }
 
-    jac_dist->begin_assembly(jacobian, jac_dist_ctx);
-    jac_dist->end_assembly(jacobian, jac_dist_ctx);
+    input_jac_dist->begin_assembly(jacobian, input_jac_dist_ctx);
+    input_jac_dist->end_assembly(jacobian, input_jac_dist_ctx);
   }
 
   /**
-   * @brief Create an instance of the Jacobian matrix
+   * @brief Compute the data Jacobian matrix
+   *
+   * @param x The design variable vector
+   * @param jacobian The Jacobian matrix
+   */
+  void data_jacobian(const std::shared_ptr<Vector<T>> x,
+                     std::shared_ptr<CSRMat<T>> jacobian) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
+    jacobian->zero();
+    for (size_t i = 0; i < components.size(); i++) {
+      components[i]->add_data_jacobian(*data_vec, *x, *jacobian);
+    }
+
+    data_jac_dist->begin_assembly(jacobian, data_jac_dist_ctx);
+    data_jac_dist->end_assembly(jacobian, data_jac_dist_ctx);
+  }
+
+  /**
+   * @brief Create an instance of the input Jacobian matrix
    *
    * @return std::shared_ptr<CSRMat<T>>
    */
-  std::shared_ptr<CSRMat<T>> create_output_matrix() {
-    if (jac) {
-      return jac->duplicate();
+  std::shared_ptr<CSRMat<T>> create_input_jacobian() {
+    if (input_jac) {
+      return input_jac->duplicate();
     } else {
       std::vector<int> intervals(components.size() + 1);
       intervals[0] = 0;
       for (size_t i = 0; i < components.size(); i++) {
-        int num_elems, outputs_per_elem, inputs_per_elem;
-        const int *outputs, *inputs;
-        components[i]->get_output_layout_data(
-            &num_elems, &outputs_per_elem, &inputs_per_elem, &outputs, &inputs);
+        int num_elems, outputs_per_elem;
+        const int* outputs;
+        components[i]->get_output_layout_data(&num_elems, &outputs_per_elem,
+                                              &outputs);
         intervals[i + 1] = intervals[i] + num_elems;
       }
 
@@ -747,8 +776,8 @@ class OptimizationProblem {
 
         int num_elems;
         const int *outputs, *inputs;
-        components[idx]->get_output_layout_data(&num_elems, nrow, ncol,
-                                                &outputs, &inputs);
+        components[idx]->get_output_layout_data(&num_elems, nrow, &outputs);
+        components[idx]->get_layout_data(&num_elems, ncol, &inputs);
 
         int elem = element - intervals[idx];
         *rows = &outputs[(*nrow) * elem];
@@ -768,10 +797,74 @@ class OptimizationProblem {
                                                  element_output, &rowp, &cols);
 
       // Distribute the pattern across matrices
-      jac_dist =
+      input_jac_dist =
           new MatrixDistribute(comm, output_owners, var_owners, num_outputs,
-                               num_variables, rowp, cols, jac);
-      jac_dist_ctx = jac_dist->create_context<T>();
+                               num_variables, rowp, cols, input_jac);
+      input_jac_dist_ctx = input_jac_dist->create_context<T>();
+
+      delete[] rowp;
+      delete[] cols;
+
+      return mat;
+    }
+  }
+
+  /**
+   * @brief Create an instance of the input Jacobian matrix
+   *
+   * @return std::shared_ptr<CSRMat<T>>
+   */
+  std::shared_ptr<CSRMat<T>> create_data_jacobian() {
+    if (data_jac) {
+      return data_jac->duplicate();
+    } else {
+      std::vector<int> intervals(components.size() + 1);
+      intervals[0] = 0;
+      for (size_t i = 0; i < components.size(); i++) {
+        int num_elems, outputs_per_elem;
+        const int* outputs;
+        components[i]->get_output_layout_data(&num_elems, &outputs_per_elem,
+                                              &outputs);
+        intervals[i + 1] = intervals[i] + num_elems;
+      }
+
+      auto element_output = [&](int element, int* nrow, int* ncol,
+                                const int** rows, const int** cols) {
+        // upper_bound finds the first index i such that intervals[i] >
+        // element
+        auto it = std::upper_bound(intervals.begin(), intervals.end(), element);
+
+        // Decrement to get the interval where element fits: intervals[idx]
+        // <= element < intervals[idx+1]
+        int idx = static_cast<int>(it - intervals.begin()) - 1;
+
+        int num_elems;
+        const int *outputs, *data;
+        components[idx]->get_output_layout_data(&num_elems, nrow, &outputs);
+        components[idx]->get_data_layout_data(&num_elems, ncol, &data);
+
+        int elem = element - intervals[idx];
+        *rows = &outputs[(*nrow) * elem];
+        *cols = &data[(*ncol) * elem];
+      };
+
+      int num_outputs =
+          output_owners->get_local_size() + output_owners->get_ext_size();
+
+      int num_data =
+          data_owners->get_local_size() + data_owners->get_ext_size();
+
+      // Generate the non-zero pattern
+      int *rowp, *cols;
+      OrderingUtils::create_csr_from_output_data(num_outputs, num_data,
+                                                 intervals[components.size()],
+                                                 element_output, &rowp, &cols);
+
+      // Distribute the pattern across matrices
+      data_jac_dist =
+          new MatrixDistribute(comm, output_owners, data_owners, num_outputs,
+                               num_data, rowp, cols, data_jac);
+      data_jac_dist_ctx = data_jac_dist->create_context<T>();
 
       delete[] rowp;
       delete[] cols;
@@ -785,10 +878,8 @@ class OptimizationProblem {
    * @brief Create a functor that returns the number of nodes and node
    * numbers, given an element index
    *
-   * @param intervals Data structure that stores the intervals for the
-   * elements
-   * @return The functor returning number of nodes per element and element
-   * nodes
+   * @param intervals Data structure that stores the intervals for the elements
+   * @return The functor returning number of nodes per element and element nodes
    */
   auto get_element_nodes(std::vector<int>& intervals) const {
     intervals.resize(components.size() + 1);
@@ -829,8 +920,7 @@ class OptimizationProblem {
    * @brief Create a functor that returns the number of nodes and node numbers
    * for the data, given an element index
    *
-   * @param intervals Data structure that stores the intervals for the
-   * elements
+   * @param intervals Data structure that stores the intervals for the elements
    * @return The functor returning the data per element and data indices
    */
   auto get_element_data(std::vector<int>& intervals) const {
@@ -872,18 +962,17 @@ class OptimizationProblem {
    * @brief Create a functor that returns the number of outputs and output
    * numbers given an element index
    *
-   * @param intervals Data structure that stores the intervals for the
-   * elements
+   * @param intervals Data structure that stores the intervals for the elements
    * @return The functor returning the outputs per element and output indices
    */
   auto get_element_output(std::vector<int>& intervals) const {
     intervals.resize(components.size() + 1);
     intervals[0] = 0;
     for (size_t i = 0; i < components.size(); i++) {
-      int num_elems, ouputs_per_elem, nodes_per_elem;
-      const int *outputs, *inputs;
+      int num_elems, ouputs_per_elem;
+      const int* outputs;
       components[i]->get_output_layout_data(&num_elems, &ouputs_per_elem,
-                                            &nodes_per_elem, &outputs, &inputs);
+                                            &outputs);
       intervals[i + 1] = intervals[i] + num_elems;
     }
 
@@ -896,10 +985,10 @@ class OptimizationProblem {
       // <= element < intervals[idx+1]
       int idx = static_cast<int>(it - intervals.begin()) - 1;
 
-      int num_elems, ouputs_per_elem, nodes_per_elem;
-      const int *outputs, *inputs;
-      components[idx]->get_output_layout_data(
-          &num_elems, &ouputs_per_elem, &nodes_per_elem, &outputs, &inputs);
+      int num_elems, ouputs_per_elem;
+      const int* outputs;
+      components[idx]->get_output_layout_data(&num_elems, &ouputs_per_elem,
+                                              &outputs);
 
       int elem = element - intervals[idx];
       if (ouputs_per_elem > 0) {
@@ -1022,9 +1111,13 @@ class OptimizationProblem {
   MatrixDistribute::MatDistributeContext<T>* mat_dist_ctx;
 
   // Information about the output Jacobian
-  std::shared_ptr<CSRMat<T>> jac;
-  MatrixDistribute* jac_dist;
-  MatrixDistribute::MatDistributeContext<T>* jac_dist_ctx;
+  std::shared_ptr<CSRMat<T>> input_jac;
+  MatrixDistribute* input_jac_dist;
+  MatrixDistribute::MatDistributeContext<T>* input_jac_dist_ctx;
+
+  std::shared_ptr<CSRMat<T>> data_jac;
+  MatrixDistribute* data_jac_dist;
+  MatrixDistribute::MatDistributeContext<T>* data_jac_dist_ctx;
 };
 
 }  // namespace amigo
