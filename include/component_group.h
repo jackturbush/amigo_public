@@ -207,7 +207,7 @@ class SerialOutputBackend {
                                  const IndexLayout<noutputs> &output_layout,
                                  const Vector<T> &data_vec,
                                  const Vector<T> &vec, CSRMat<T> &jac) const {
-    if constexpr (Component::noutputs > 0) {
+    if constexpr (Component::noutputs > 0 && Component::ncomp > 0) {
       typename Component::template Data<A2D::ADScalar<T, 1>> data;
       typename Component::template Input<A2D::ADScalar<T, 1>> input;
       typename Component::template Output<A2D::ADScalar<T, 1>> output;
@@ -261,7 +261,7 @@ class SerialOutputBackend {
                                 const IndexLayout<noutputs> &output_layout,
                                 const Vector<T> &data_vec, const Vector<T> &vec,
                                 CSRMat<T> &jac) const {
-    if constexpr (Component::noutputs > 0) {
+    if constexpr (Component::noutputs > 0 && Component::ndata > 0) {
       typename Component::template Data<A2D::ADScalar<T, 1>> data;
       typename Component::template Input<A2D::ADScalar<T, 1>> input;
       typename Component::template Output<A2D::ADScalar<T, 1>> output;
