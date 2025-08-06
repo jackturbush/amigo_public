@@ -176,7 +176,7 @@ class SerialOutputBackend {
       typename Component::template Data<T> data;
       typename Component::template Input<T> input;
       typename Component::template Output<T> output;
-      int length = layout.get_length();
+      int length = layout.get_num_elements();
 
       for (int i = 0; i < length; i++) {
         data_layout.get_values(i, data_vec, data);
@@ -211,7 +211,7 @@ class SerialOutputBackend {
       typename Component::template Data<A2D::ADScalar<T, 1>> data;
       typename Component::template Input<A2D::ADScalar<T, 1>> input;
       typename Component::template Output<A2D::ADScalar<T, 1>> output;
-      int length = layout.get_length();
+      int length = layout.get_num_elements();
 
       for (int i = 0; i < length; i++) {
         data_layout.get_values(i, data_vec, data);
@@ -265,7 +265,7 @@ class SerialOutputBackend {
       typename Component::template Data<A2D::ADScalar<T, 1>> data;
       typename Component::template Input<A2D::ADScalar<T, 1>> input;
       typename Component::template Output<A2D::ADScalar<T, 1>> output;
-      int length = layout.get_length();
+      int length = layout.get_num_elements();
 
       for (int i = 0; i < length; i++) {
         layout.get_values(i, vec, input);
