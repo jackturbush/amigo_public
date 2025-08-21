@@ -30,6 +30,7 @@ class DirectScipySolver:
 
         # Compute the Hessian
         self.problem.hessian(x, self.hess, zero_design_contrib=zero_design_contrib)
+        H0 = tocsr(self.hess)
         self.hess.add_diagonal(diag)
 
         data = self.hess.get_data()
@@ -37,6 +38,21 @@ class DirectScipySolver:
         px.get_array()[:] = spsolve(H, bx.get_array())
 
         return
+
+    def compute_eigenvalues(self, x, diag=None, k=20, sigma=0.0, which="LM"):
+        """
+        Compute the eigenvalues and eigenvectors
+        """
+        self.problem.hessian(x, self.hess, zero_design_contrib=False)
+        if diag is not None:
+            self.hess.add_diagonal(diag)
+
+        data = self.hess.get_data()
+        H = csr_matrix((data, self.cols, self.rowp), shape=(self.nrows, self.ncols))
+
+        eigs, vecs = eigsh(H, k=k, sigma=sigma, which=which)
+
+        return eigs, vecs
 
 
 class DirectPetscSolver:
@@ -198,47 +214,22 @@ class Optimizer:
 
         # Create data that will be used in conjunction with the optimizer
         self.vars = self.optimizer.create_opt_vector(x_vec)
-        self.res = self.optimizer.create_opt_vector()
         self.update = self.optimizer.create_opt_vector()
         self.temp = self.optimizer.create_opt_vector()
 
         # Create vectors that store problem-specific information
         if self.distribute:
             self.grad = self.mpi_problem.create_vector()
+            self.res = self.mpi_problem.create_vector()
             self.diag = self.mpi_problem.create_vector()
             self.px = self.mpi_problem.create_vector()
-            self.bx = self.mpi_problem.create_vector()
         else:
             self.grad = self.problem.create_vector()
+            self.res = self.problem.create_vector()
             self.diag = self.problem.create_vector()
             self.px = self.problem.create_vector()
-            self.bx = self.problem.create_vector()
 
         return
-
-        return
-
-    def write_state_vars(self, vars):
-
-        lb = self.lower.get_array()
-        ub = self.upper.get_array()
-
-        x = vars.x.get_array()
-        xs = vars.xs.get_array()
-        zl = vars.zl.get_array()
-        zu = vars.zu.get_array()
-
-        num_vars = len(x)
-        for i in range(num_vars):
-            if i % 50 == 0:
-                line = f"{'idx':>4s} {'x':>10s} {'xs':>10s} "
-                line += f"{'zl':>10s} {'zu':>10s} {'lb':>10s} {'ub':>10s}"
-                print(line)
-
-            line = f"{i:4d} {x[i]:10.3e} {xs[i]:10.3e} "
-            line += f"{zl[i]:10.3e} {zu[i]:10.3e} "
-            line += f"{lb[i]:10.3e} {ub[i]:10.3e}"
-            print(line)
 
     def write_log(self, iteration, iter_data):
         # Write out to the log information about this line
@@ -273,6 +264,10 @@ class Optimizer:
             "check_update_step": False,
             "backtracting_factor": 0.5,
             "record_components": [],
+            "gamma_peanlty": 1e3,
+            "equal_primal_dual_step": False,
+            "init_least_squares_multipliers": True,
+            "init_affine_step_multipliers": False,
         }
 
         default.update(options)
@@ -288,13 +283,6 @@ class Optimizer:
         Note that the w components are discarded.
         """
 
-        # Set pointers to make things cleaner
-        vars = self.vars
-        res = self.res
-        px = self.px
-        diag = self.diag
-        grad = self.grad
-
         # Get which variables are multipliers/constraints
         if self.distribute:
             is_mult = self.mpi_problem.get_multiplier_indicator()
@@ -302,73 +290,74 @@ class Optimizer:
             is_mult = self.problem.get_multiplier_indicator()
         is_mult_array = is_mult.get_array()
 
-        # Use a temporary variable vector to store the initial design point.
-        # Use zero multipliers
-        x0 = px
-        x0_array = x0.get_array()
-        x0_array[:] = vars.x.get_array()
-        x0_array[is_mult_array == 1] = 0.0
-
-        # Compute the gradient
-        if self.distribute:
-            self.mpi_problem.gradient(x0, grad)
-        else:
-            self.problem.gradient(x0, grad)
-
-        # Compute the full residual
-        self.optimizer.compute_residual(0.0, vars, grad, res)
-
         # Set the diagonal entries of the matrix
-        diag.get_array()[:] = 1.0
-        diag.get_array()[is_mult_array == 1] = 0.0
+        diag_array = self.diag.get_array()
+        diag_array[:] = 1.0
+        diag_array[is_mult_array != 0] = 0.0
 
-        # Set the values of the right-hand-side
-        grad.get_array()[:] = res.x.get_array()[:]
-        grad.get_array()[is_mult_array == 1] = res.xs.get_array()[is_mult_array == 1]
+        # Compute the residual
+        self.optimizer.compute_residual(0.0, 0.0, self.vars, self.grad, self.res)
+
+        # Zero the constraint contributions
+        res_array = self.res.get_array()
+        res_array[is_mult_array != 0] = 0.0
 
         # Find the solution values
-        self.solver.solve(vars.x, diag, grad, px, zero_design_contrib=True)
+        x = self.vars.get_solution()
+        self.solver.solve(x, self.diag, self.res, self.px, zero_design_contrib=True)
 
         # Update the multiplier values
-        vars.x.get_array()[is_mult_array == 1] = px.get_array()[is_mult_array == 1]
+        x_array = x.get_array()
+        x_array[is_mult_array != 0] = self.px.get_array()[is_mult_array != 0]
 
         return
 
-    def _compute_affine_multipliers(self):
+    def _compute_affine_multipliers(self, gamma_penalty=1e3, beta_min=1.0):
         """
         Compute the affine multipliers
         """
 
-        # Get which variables are multipliers/constraints
+        # Compute the gradient at the new point with the updated multipliers
+        x = self.vars.get_solution()
         if self.distribute:
-            is_mult = self.mpi_problem.get_multiplier_indicator()
+            self.mpi_problem.gradient(x, self.grad)
         else:
-            is_mult = self.problem.get_multiplier_indicator()
-        is_mult_array = is_mult.get_array()
+            self.problem.gradient(x, self.grad)
 
         # Compute the residual
-        self.optimizer.compute_residual(0.0, self.vars, self.grad, self.res)
-
-        # Compute the reduced residual for the right-hand-side of the KKT system
-        self.optimizer.compute_reduced_residual(self.vars, self.res, self.bx)
+        mu = 0.0
+        self.optimizer.compute_residual(
+            mu, gamma_penalty, self.vars, self.grad, self.res
+        )
 
         # Add the diagonal contributions to the Hessian matrix
         self.optimizer.compute_diagonal(self.vars, self.diag)
 
         # Solve the KKT system
-        self.solver.solve(self.vars.x, self.diag, self.bx, self.px)
+        self.solver.solve(x, self.diag, self.res, self.px)
 
         # Compute the full update based on the reduced variable update
-        self.optimizer.compute_update_from_reduced(
-            self.vars, self.res, self.px, self.update
+        self.optimizer.compute_update(
+            mu, gamma_penalty, self.vars, self.px, self.update
         )
 
+        self.optimizer.compute_affine_start_point(
+            beta_min, self.vars, self.update, self.temp
+        )
+
+        # Copy over the design point
+        xt_array = self.temp.get_solution().get_array()
+        x_array = self.vars.get_solution().get_array()
+        xt_array[:] = x_array[:]
+
         # Now, compute the updates based
-        barrier = 1e2
+        barrier = self.optimizer.compute_complementarity(self.temp)
+
+        self.vars.copy(self.temp)
 
         return barrier
 
-    def _add_regularization_terms(self, diag, eps_x=1e-4, eps_c=1e-4):
+    def _add_regularization_terms(self, diag, eps_x=1e-4, eps_z=1e-4):
         if self.distribute:
             is_mult = self.mpi_problem.get_multiplier_indicator()
         else:
@@ -378,7 +367,20 @@ class Optimizer:
         # Add regularization terms
         diag_array = diag.get_array()
         diag_array[is_mult_array == 0] += eps_x
-        diag_array[is_mult_array == 1] -= eps_c
+        diag_array[is_mult_array == 1] -= eps_z
+
+        return
+
+    def _zero_multipliers(self, x):
+        # Zero the multiplier contributions
+        if self.distribute:
+            is_mult = self.mpi_problem.get_multiplier_indicator()
+        else:
+            is_mult = self.problem.get_multiplier_indicator()
+        is_mult_array = is_mult.get_array()
+
+        x_array = x.get_array()
+        x_array[is_mult_array != 0] = 0.0
 
         return
 
@@ -398,49 +400,75 @@ class Optimizer:
         # Data that is recorded at each iteration
         opt_data = {"options": options, "converged": False, "iterations": []}
 
-        barrier_param = options["initial_barrier_param"]
+        self.barrier_param = options["initial_barrier_param"]
+        self.gamma_penalty = options["gamma_peanlty"]
         max_iters = options["max_iterations"]
         tau = options["fraction_to_boundary"]
         tol = options["convergence_tolerance"]
         record_components = options["record_components"]
 
+        # Get the x/multiplier solution vector from the optimization variables
+        x = self.vars.get_solution()
+
         # Create a view into x using the component indices
         xview = None
         if not self.distribute:
-            xview = ModelVector(self.model, x=self.vars.x)
+            xview = ModelVector(self.model, x=x)
+
+        # Zero the multipliers so that the gradient consists of the objective gradient and
+        # constraint values
+        self._zero_multipliers(x)
+
+        # Compute the gradient
+        self.problem.gradient(x, self.grad)
 
         # Set the initial point and slack variable
-        self.optimizer.initialize_multipliers_and_slacks(self.vars)
+        self.optimizer.initialize_multipliers_and_slacks(
+            self.barrier_param, self.grad, self.vars
+        )
 
         # Initialize the multipliers
-        self._compute_least_squares_multipliers()
+        if options["init_affine_step_multipliers"]:
+            # Compute the
+            self._compute_least_squares_multipliers()
 
-        # Improve the initial estimate
-        # barrier_param = self._compute_affine_multipliers()
+            # Compute the affine step multipliers and
+            self.barrier_param = self._compute_affine_multipliers(
+                beta_min=self.barrier_param, gamma_penalty=self.gamma_penalty
+            )
+        elif options["init_least_squares_multipliers"]:
+            self._compute_least_squares_multipliers()
 
         # Compute the gradient
         if self.distribute:
-            self.mpi_problem.gradient(self.vars.x, self.grad)
+            self.mpi_problem.gradient(x, self.grad)
         else:
-            self.problem.gradient(self.vars.x, self.grad)
+            self.problem.gradient(x, self.grad)
 
         line_iters = 0
-        alpha_prev = 0.0
+        alpha_x_prev = 0.0
+        alpha_z_prev = 0.0
+        x_index_prev = -1
+        z_index_prev = -1
+
         for i in range(max_iters):
             iter_data = {}
 
             # Compute the complete KKT residual
             res_norm = self.optimizer.compute_residual(
-                barrier_param, self.vars, self.grad, self.res
+                self.barrier_param, self.gamma_penalty, self.vars, self.grad, self.res
             )
 
             # Set information about the residual norm into the
             iter_data = {
                 "iteration": i,
                 "residual": res_norm,
-                "barrier_param": barrier_param,
+                "barrier_param": self.barrier_param,
                 "line_iters": line_iters,
-                "alpha": alpha_prev,
+                "alpha_x": alpha_x_prev,
+                "x_index": x_index_prev,
+                "alpha_z": alpha_z_prev,
+                "z_index": z_index_prev,
             }
 
             if comm_rank == 0:
@@ -454,37 +482,35 @@ class Optimizer:
             opt_data["iterations"].append(iter_data)
 
             barrier_converged = False
-            if barrier_param <= 0.1 * tol and res_norm < tol:
+            if self.barrier_param <= 0.1 * tol and res_norm < tol:
                 opt_data["converged"] = True
                 break
-            elif res_norm < 0.1 * barrier_param:
+            elif res_norm < 0.1 * self.barrier_param:
                 barrier_converged = True
 
             # Check if the barrier problem has converged
             if barrier_converged:
                 frac = options["monotone_barrier_fraction"]
-                barrier_param *= frac
+                self.barrier_param *= frac
 
-                # Re-compute the residuals with the updated barrier parameter
+                # Re-compute the reduced residual for the right-hand-side of the KKT system
                 res_norm = self.optimizer.compute_residual(
-                    barrier_param, self.vars, self.grad, self.res
+                    self.barrier_param,
+                    self.gamma_penalty,
+                    self.vars,
+                    self.grad,
+                    self.res,
                 )
-
-            # Compute the reduced residual for the right-hand-side of the KKT system
-            self.optimizer.compute_reduced_residual(self.vars, self.res, self.bx)
 
             # Add the diagonal contributions to the Hessian matrix
             self.optimizer.compute_diagonal(self.vars, self.diag)
 
-            # Add the regularization
-            # self._add_regularization_terms(self.diag)
-
-            # Solve the KKT system
-            self.solver.solve(self.vars.x, self.diag, self.bx, self.px)
+            # Solve the KKT system with the computed diagonal entries
+            self.solver.solve(x, self.diag, self.res, self.px)
 
             # Compute the full update based on the reduced variable update
-            self.optimizer.compute_update_from_reduced(
-                self.vars, self.res, self.px, self.update
+            self.optimizer.compute_update(
+                self.barrier_param, self.gamma_penalty, self.vars, self.px, self.update
             )
 
             # Check the update
@@ -493,35 +519,48 @@ class Optimizer:
                     hess = self.mpi_problem.create_matrix()
                 else:
                     hess = self.problem.create_matrix()
-                self.optimizer.check_update(self.vars, self.res, self.update, hess)
+                self.optimizer.check_update(
+                    self.barrier_param,
+                    self.gamma_penalty,
+                    self.grad,
+                    self.vars,
+                    self.update,
+                    hess,
+                )
 
             # Compute the max step in the multipliers
-            alpha_x, alpha_z = self.optimizer.compute_max_step(
+            alpha_x, x_index, alpha_z, z_index = self.optimizer.compute_max_step(
                 tau, self.vars, self.update
             )
+
+            # Set the line search step length for the primal and dual variables to be equal to one another
+            if options["equal_primal_dual_step"]:
+                alpha_x = alpha_z = min(alpha_x, alpha_z)
 
             # Compute the step length
             max_line_iters = options["max_line_search_iterations"]
             alpha = 1.0
             line_iters = 1
             for j in range(max_line_iters):
-                # Copy the variable values
-                self.temp.copy(self.vars)
-
                 # Apply the update to get the new variable values at candidate step length alpha
                 self.optimizer.apply_step_update(
-                    alpha * alpha_x, alpha * alpha_z, self.update, self.temp
+                    alpha * alpha_x, alpha * alpha_z, self.vars, self.update, self.temp
                 )
 
                 # Compute the gradient at the new point
+                xt = self.temp.get_solution()
                 if self.distribute:
-                    self.mpi_problem.gradient(self.temp.x, self.grad)
+                    self.mpi_problem.gradient(xt, self.grad)
                 else:
-                    self.problem.gradient(self.temp.x, self.grad)
+                    self.problem.gradient(xt, self.grad)
 
                 # Compute the residual at the perturbed point
                 res_norm_new = self.optimizer.compute_residual(
-                    barrier_param, self.temp, self.grad, self.res
+                    self.barrier_param,
+                    self.gamma_penalty,
+                    self.temp,
+                    self.grad,
+                    self.res,
                 )
 
                 if res_norm_new < res_norm or j == max_line_iters - 1:
@@ -533,6 +572,9 @@ class Optimizer:
                     # Apply a simple backtracking algorithm
                     alpha *= options["backtracting_factor"]
 
-            alpha_prev = alpha * min(alpha_x, alpha_z)
+            alpha_x_prev = alpha * alpha_x
+            alpha_z_prev = alpha * alpha_z
+            x_index_prev = x_index
+            z_index_prev = z_index
 
         return opt_data

@@ -111,9 +111,9 @@ def _parse_indices_depr(slice_node):
         elif isinstance(slice_node, ast.Tuple):
             return tuple(_eval_ast_index_depr(elt) for elt in slice_node.elts)
         elif isinstance(slice_node, ast.Index):
-            return (_eval_ast_index_depr(slice_node.value),)
+            return _eval_ast_index_depr(slice_node.value)
         else:
-            return (_eval_ast_index_depr(slice_node),)
+            return _eval_ast_index_depr(slice_node)
     else:
         raise NotImplementedError
 

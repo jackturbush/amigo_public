@@ -227,7 +227,7 @@ if args.build:
 
 model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
 
-with open("brachistochon_model.json", "w") as fp:
+with open("brachistochrone_model.json", "w") as fp:
     json.dump(model.get_serializable_data(), fp, indent=2)
 
 print(f"Num variables:              {model.num_variables}")
@@ -261,36 +261,42 @@ lower = model.create_vector()
 upper = model.create_vector()
 
 # Final time bounds
-lower["obj.tf"] = 0.5
-upper["obj.tf"] = 100
+lower["obj.tf"] = 1.0
+upper["obj.tf"] = float("inf")
 
-# Position x and y bounds
-# Bounds on x
-lower["dynamics.q[:, 0]"] = -1.0
-upper["dynamics.q[:, 0]"] = 20.0
+lower["dynamics.q"] = -float("inf")
+upper["dynamics.q"] = float("inf")
 
-# Bounds on y
-lower["dynamics.q[:, 1]"] = -1.0
-upper["dynamics.q[:, 1]"] = 20.0
+lower["dynamics.qdot"] = -float("inf")
+upper["dynamics.qdot"] = float("inf")
 
-# Bounds on the velocity
-lower["dynamics.q[:, 2]"] = -1.0
-upper["dynamics.q[:, 2]"] = 50.0
+# # Position x and y bounds
+# # Bounds on x
+# lower["dynamics.q[:, 0]"] = -1.0
+# upper["dynamics.q[:, 0]"] = 20.0
 
-# Bounds on the time derivatives
-lower["dynamics.qdot"] = -100
-upper["dynamics.qdot"] = 100
+# # # Bounds on y
+# lower["dynamics.q[:, 1]"] = -1.0
+# upper["dynamics.q[:, 1]"] = 20.0
 
-# Bounds on the control angle:
+# # Bounds on the velocity
+# lower["dynamics.q[:, 2]"] = -1.0
+# upper["dynamics.q[:, 2]"] = 50.0
+
+# # Bounds on the control angle:
 lower["dynamics.theta"] = 0.0
 upper["dynamics.theta"] = np.pi
+
+# lower["dynamics.theta"] = -float("inf")
+# upper["dynamics.theta"] = float("inf")
 
 opt = am.Optimizer(model, x, lower=lower, upper=upper)
 data = opt.optimize(
     {
-        "max_iterations": 100,
-        "initial_barrier_param": 10.0,
-        "max_line_search_iterations": 10,
+        "max_iterations": 500,
+        "initial_barrier_param": 1.0,
+        "max_line_search_iterations": 5,
+        # "check_update_step": True,
     }
 )
 
