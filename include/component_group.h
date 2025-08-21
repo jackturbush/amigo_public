@@ -310,6 +310,7 @@ template <typename T, int ncomp, class Input, int ndata, class Data,
           class... Components>
 class OmpGroupBackend {
  public:
+  template <int noutputs>
   OmpGroupBackend(IndexLayout<ndata> &data_layout, IndexLayout<ncomp> &layout,
                   IndexLayout<noutputs> &output_layout)
       : num_colors(0), elem_per_color(nullptr) {
