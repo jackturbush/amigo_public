@@ -200,8 +200,10 @@ class BSplineInterpolant(am.Component):
 
 
 class AircraftDynamics(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+
+        self.scaling = scaling
 
         # Physical constants matching the original code
         self.add_constant("S", value=49.2386)  # m^2
@@ -281,12 +283,14 @@ class AircraftDynamics(am.Component):
 
         # Aircraft dynamics equations (matching original computeSystemResidual)
         res = [
-            qdot[0] - ((T / m) * cos_alpha - (D / m) - g * sin_gamma) / 100.0,
+            qdot[0]
+            - ((T / m) * cos_alpha - (D / m) - g * sin_gamma)
+            / self.scaling["velocity"],
             conv * qdot[1]
             - ((T / (m * v) * sin_alpha + (L / (m * v)) - (g / v) * cos_gamma)),
-            qdot[2] - v * sin_gamma / 1000.0,
-            qdot[3] - v * cos_gamma / 1000.0,
-            qdot[4] + (T / (g * Isp)) / 1000.0,
+            qdot[2] - v * sin_gamma / self.scaling["altitude"],
+            qdot[3] - v * cos_gamma / self.scaling["range"],
+            qdot[4] + (T / (g * Isp)) / self.scaling["mass"],
         ]
 
         self.constraints["res"] = res
@@ -311,9 +315,9 @@ class Objective(am.Component):
 
 
 class InitialConditions(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
-
+        self.scaling = scaling
         self.add_input("q", shape=5)
         self.add_constraint("res", shape=5)
 
@@ -322,30 +326,27 @@ class InitialConditions(am.Component):
 
         # Initial conditions matching original getInitConditions
         self.constraints["res"] = [
-            q[0] - 1.36,  # velocity = 136 [m/s] / 100
+            q[0] - 136.0 / self.scaling["velocity"],  # 136 [m/s]
             q[1] - 0.0,  # flight path angle [degrees]
-            q[2] - 0.1,  # 100.0,  # altitude [m]
-            q[3] - 0.0,  # range [m]
-            q[4] - 19.03,  # mass 19030 [kg] / 1000
+            q[2] - 100.0 / self.scaling["altitude"],  # 100.0 [m]
+            q[3] - 0.0 / self.scaling["range"],  # [m]
+            q[4] - 19030.0 / self.scaling["mass"],  # 19030 [kg]
         ]
 
 
 class FinalConditions(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+        self.scaling = scaling
         self.add_input("q", shape=5)
         self.add_constraint("res", shape=3)
 
     def compute(self):
         q = self.inputs["q"]
-        hf = 20.0  # 20 [km]
-        gam_f = 0.0
-        vf = 3.4  # 340 [m / s]
-
         self.constraints["res"] = [
-            q[0] - vf,
-            q[1] - gam_f,
-            q[2] - hf,
+            q[0] - 340.0 / self.scaling["velocity"],  # 340 [m/s]
+            q[1] - 0.0,  # Final flight path angle [degrees]
+            q[2] - 20000.0 / self.scaling["altitude"],  # 20 [km]
         ]
 
 
@@ -412,16 +413,19 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# Create the model
+# Set the scaling
+scaling = {"velocity": 100.0, "altitude": 1000.0, "range": 1000.0, "mass": 1000.0}
+
 # Create component instances
-ac = AircraftDynamics()
+ac = AircraftDynamics(scaling)
 trap = TrapezoidRule()
 src = BSplineSource(n=10)
 bspline = BSplineInterpolant(k=4, n=10)
 obj = Objective()
-ic = InitialConditions()
-fc = FinalConditions()
+ic = InitialConditions(scaling)
+fc = FinalConditions(scaling)
 
+# Create the model
 module_name = "time_to_climb"
 model = am.Model(module_name)
 
@@ -499,7 +503,7 @@ x["obj.tf"] = tf_guess
 # Set initial guess for states (reasonable trajectory)
 t_guess = np.linspace(0, tf_guess, num_time_steps + 1)
 
-# Set the initial guess values
+# Set the initial guess
 x["ac.q[:, 0]"] = 1.36 + (3.40 - 1.36) * t_guess / tf_guess  # velocity
 x["ac.q[:, 1]"] = 5.0 * np.sin(np.pi * t_guess / tf_guess)  # flight path angle
 x["ac.q[:, 2]"] = 1.0 + (20.0 - 1.0) * t_guess / tf_guess  # altitude
