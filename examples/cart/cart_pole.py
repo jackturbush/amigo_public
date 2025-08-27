@@ -382,7 +382,7 @@ data = opt.optimize(
         "max_iterations": 100,
         "record_components": ["cart.x[-1]"],
         "max_line_search_iterations": 10,
-        # "check_update_step": True,
+        "convergence_tolerance": 1e-8,
     }
 )
 with open("cart_opt_data.json", "w") as fp:

@@ -83,7 +83,7 @@ class CannonDynamics(am.Component):
         # Dynamic constraints equations
         res = 4 * [None]
         # v = (q[2] * q[2] + q[3] * q[3]) ** 0.5
-        v = am.sqrt(q[2] * q[2] + q[3] * q[3])
+        v = self.vars["v"] = am.sqrt(q[2] * q[2] + q[3] * q[3])
 
         # Position derivatives equal velocities
         res[0] = qdot[0] - q[2]  # xdot = vx
@@ -404,12 +404,16 @@ lower["cannon.q[:,0]"] = -10  # x position
 upper["cannon.q[:,0]"] = 50
 lower["cannon.q[:,1]"] = -50  # y position
 upper["cannon.q[:,1]"] = 50
+
 # Velocity bounds
 lower["cannon.q[:,2]"] = -50  # vx bounds
 upper["cannon.q[:,2]"] = 50
 lower["cannon.q[:,3]"] = -50  # vy bounds
 upper["cannon.q[:,3]"] = 50
 
+# Set the qdot values
+lower["cannon.qdot"] = -float("inf")
+upper["cannon.qdot"] = float("inf")
 
 # Optimization with trajectory recording
 opt = am.Optimizer(model, x, lower=lower, upper=upper)

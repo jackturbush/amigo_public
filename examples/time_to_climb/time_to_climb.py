@@ -58,9 +58,7 @@ class BSplineSource(am.Component):
         """
         super().__init__()
         self.n = n
-
         self.add_input("x", shape=n)
-
         return
 
 
@@ -551,7 +549,7 @@ data = opt.optimize(
     {
         "initial_barrier_param": 1.0,
         "monotone_barrier_fraction": 0.25,
-        "rtol": 1e-6,
+        "convergence_tolerance": 1e-10,
         "max_line_search_iterations": 5,
         "max_iterations": 1000,
         "init_affine_step_multipliers": False,

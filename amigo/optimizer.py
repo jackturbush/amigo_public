@@ -270,7 +270,12 @@ class Optimizer:
             "init_affine_step_multipliers": False,
         }
 
-        default.update(options)
+        for name in options:
+            if name in default:
+                default[name] = options[name]
+            else:
+                raise ValueError(f"Unrecognized option {name}")
+
         return default
 
     def _compute_least_squares_multipliers(self):
@@ -482,7 +487,7 @@ class Optimizer:
             opt_data["iterations"].append(iter_data)
 
             barrier_converged = False
-            if self.barrier_param <= 0.1 * tol and res_norm < tol:
+            if self.barrier_param <= 0.999 * tol and res_norm < tol:
                 opt_data["converged"] = True
                 break
             elif res_norm < 0.1 * self.barrier_param:
@@ -536,6 +541,11 @@ class Optimizer:
             # Set the line search step length for the primal and dual variables to be equal to one another
             if options["equal_primal_dual_step"]:
                 alpha_x = alpha_z = min(alpha_x, alpha_z)
+
+            # # Check if this is a line search
+
+            # # Compute the derivative of the line search function
+            # self._compute_line_search_deriv()
 
             # Compute the step length
             max_line_iters = options["max_line_search_iterations"]

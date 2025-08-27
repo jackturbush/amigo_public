@@ -517,6 +517,48 @@ class Model:
 
         return counter
 
+    def link_by_name(self, src_comp=None, tgt_comp=None, vtype="input"):
+        """
+        Link inputs, constraints, outputs or data with the same name between different components.
+
+        Add links to the variables that are defined in different components but share a common name.
+        This can be useful if the naming convention is consistent across the model. The variables must
+        have a compatible shape.
+
+        Args:
+            src_comp (str): Source component name or None
+            tgt_comp (str): Target component name or None
+            vtype (str): Type of variable to link
+        """
+
+        if src_comp is None and tgt_comp is None:
+            # Link everything
+            for src in self.comp:
+                for tgt in self.comp:
+                    if src != tgt:
+                        self.link_by_name(src_comp=src, tgt_comp=tgt, vtype=vtype)
+        else:
+            if vtype == "input":
+                src_names = self.comp[src_comp].get_input_names()
+                tgt_names = self.comp[tgt_comp].get_input_names()
+            elif vtype == "constraint":
+                src_names = self.comp[src_comp].get_constraint_names()
+                tgt_names = self.comp[tgt_comp].get_constraint_names()
+            elif vtype == "data":
+                src_names = self.comp[src_comp].get_data_names()
+                tgt_names = self.comp[tgt_comp].get_data_names()
+            elif vtype == "output":
+                src_names = self.comp[src_comp].get_output_names()
+                tgt_names = self.comp[tgt_comp].get_output_names()
+
+            for src in src_names:
+                if src in tgt_names:
+                    src_name = src_comp + "." + src
+                    tgt_name = tgt_comp + "." + src
+                    self.link(src_name, tgt_name)
+
+        return
+
     def _reorder_indices(self, order_type, order_for_block=False):
         arrays = []
         for name, comp in self.comp.items():

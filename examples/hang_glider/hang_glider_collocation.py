@@ -26,8 +26,10 @@ num_time_steps = 200
 
 
 class TrapezoidRule(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+
+        self.scaling = scaling
 
         self.add_input("tf")  # Final time as input
         self.add_input("q1")
@@ -40,7 +42,7 @@ class TrapezoidRule(am.Component):
         return
 
     def compute(self):
-        tf = self.inputs["tf"]
+        tf = self.scaling["time"] * self.inputs["tf"]
 
         q1 = self.inputs["q1"]
         q2 = self.inputs["q2"]
@@ -54,8 +56,10 @@ class TrapezoidRule(am.Component):
 
 
 class GliderDynamics(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+
+        self.scaling = scaling
 
         # Add constants (SI units)
         self.add_constant("uM", value=2.5)
@@ -94,10 +98,10 @@ class GliderDynamics(am.Component):
         qdot = self.inputs["qdot"]
 
         # State variables
-        x = q[0]  # horizontal distance
-        y = q[1]  # altitude
-        vx = q[2]  # horizontal velocity
-        vy = q[3]  # vertical velocity
+        x = self.scaling["distance"] * q[0]  # horizontal distance
+        y = self.scaling["distance"] * q[1]  # altitude
+        vx = self.scaling["velocity"] * q[2]  # horizontal velocity
+        vy = self.scaling["velocity"] * q[3]  # vertical velocity
 
         # Get the required values to complete the dynamics
         # X = (x/R - 2.5)^2
@@ -136,20 +140,25 @@ class GliderDynamics(am.Component):
         res = 4 * [None]
 
         # Position derivatives
-        res[0] = qdot[0] - vx
-        res[1] = qdot[1] - vy
+        res[0] = qdot[0] - vx / self.scaling["distance"]
+        res[1] = qdot[1] - vy / self.scaling["distance"]
 
         # Velocity derivatives (accelerations)
-        res[2] = qdot[2] - (-L * sin_eta - D * cos_eta) / m
-        res[3] = qdot[3] - (L * cos_eta - D * sin_eta - W) / m
+        vxdot = (-L * sin_eta - D * cos_eta) / m
+        vydot = (L * cos_eta - D * sin_eta - W) / m
+        res[2] = qdot[2] - vxdot / self.scaling["velocity"]
+        res[3] = qdot[3] - vydot / self.scaling["velocity"]
 
         self.constraints["res"] = res
+
         return
 
 
 class RangeObjective(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+
+        self.scaling = scaling
         self.add_input("xf", label="Horizontal distance at tf")
         self.add_objective("obj")
 
@@ -158,12 +167,13 @@ class RangeObjective(am.Component):
     def compute(self):
         xf = self.inputs["xf"]
         # Only the final x (range) should be maximized
-        self.objective["obj"] = -xf
+        self.objective["obj"] = -xf  # / self.scaling["distance"]
 
 
 class InitialConditions(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+        self.scaling = scaling
         self.add_input("q", shape=4)
         self.add_constraint("res", shape=4)
 
@@ -172,16 +182,17 @@ class InitialConditions(am.Component):
         x0, y0, vx0, vy0 = 0.0, 1000.0, 13.227567500, -1.2875005200
         q = self.inputs["q"]
         self.constraints["res"] = [
-            q[0] - x0,
-            q[1] - y0,
-            q[2] - vx0,
-            q[3] - vy0,
+            q[0] - x0 / self.scaling["distance"],
+            q[1] - y0 / self.scaling["distance"],
+            q[2] - vx0 / self.scaling["velocity"],
+            q[3] - vy0 / self.scaling["velocity"],
         ]
 
 
 class FinalConditions(am.Component):
-    def __init__(self):
+    def __init__(self, scaling):
         super().__init__()
+        self.scaling = scaling
         self.add_input("q", shape=4)
         self.add_constraint("res", shape=3)
 
@@ -190,20 +201,20 @@ class FinalConditions(am.Component):
         yF, vxF, vyF = 900.0, 13.227567500, -1.2875005200
         q = self.inputs["q"]
         self.constraints["res"] = [
-            q[1] - yF,  # altitude constraint
-            q[2] - vxF,  # horizontal velocity constraint
-            q[3] - vyF,  # vertical velocity constraint
+            q[1] - yF / self.scaling["distance"],  # altitude constraint
+            q[2] - vxF / self.scaling["velocity"],  # horizontal velocity constraint
+            q[3] - vyF / self.scaling["velocity"],  # vertical velocity constraint
         ]
 
 
 # Build and link the model
-def create_hang_glide_model(num_time_steps=200, model_name="max_range_glide"):
+def create_hang_glide_model(scaling, num_time_steps=200, model_name="max_range_glide"):
     # Build the components
-    gd = GliderDynamics()
-    trap = TrapezoidRule()
-    obj = RangeObjective()
-    ic = InitialConditions()
-    fc = FinalConditions()
+    gd = GliderDynamics(scaling)
+    trap = TrapezoidRule(scaling)
+    obj = RangeObjective(scaling)
+    ic = InitialConditions(scaling)
+    fc = FinalConditions(scaling)
 
     model = am.Model(model_name)
 
@@ -261,7 +272,10 @@ parser.add_argument(
     help="Use single mesh instead of mesh refinement",
 )
 args = parser.parse_args()
-model = create_hang_glide_model()
+
+# Set the scaling
+scaling = {"velocity": 10.0, "distance": 100.0, "time": 10.0}
+model = create_hang_glide_model(scaling)
 
 if args.build:
     compile_args = []
@@ -286,66 +300,71 @@ print(f"Num constraints:            {model.num_constraints}")
 
 prob = model.get_opt_problem()
 
-
 # Get the design variables
 x = model.create_vector()
 x[:] = 0.0
 
 # Set initial guess following book recommendations:
 tf_guess = 100.0
-x["trap.tf"] = tf_guess
-
 t_guess = np.linspace(0, tf_guess, num_time_steps + 1)
 t_frac = t_guess / tf_guess
-x[f"gd.q[:, 0]"] = 0.0 + t_frac * 1250.0
+x[f"gd.q[:, 0]"] = (0.0 + t_frac * 1250.0) / scaling["distance"]
 
 # Interpolate y from 1000 to 900
-x[f"gd.q[:, 1]"] = 1000.0 + t_frac * (900.0 - 1000.0)
+x[f"gd.q[:, 1]"] = (1000.0 + t_frac * (900.0 - 1000.0)) / scaling["distance"]
 
 # Keep velocities constant as per boundary conditions
-x[f"gd.q[:, 2]"] = 13.227567500
-x[f"gd.q[:, 3]"] = -1.2875005200
+x[f"gd.q[:, 2]"] = 13.227567500 / scaling["velocity"]
+x[f"gd.q[:, 3]"] = -1.2875005200 / scaling["velocity"]
 
 # Set initial control values (as recommended in the book: CL(0) = CL(tF) = 1)
 x["gd.CL"] = 1.0
 
 # Set initial final time (from the book's plots, optimal time is around 100 seconds)
-x["trap.tf"] = 100.0
-
+x["trap.tf"] = tf_guess / scaling["time"]
 
 # Set bounds for the optimization problem:
 lower = model.create_vector()
 upper = model.create_vector()
 
 # Control bounds (from problem specification)
-lower["gd.CL"] = 0.0
-upper["gd.CL"] = 1.4
+lower["gd.CL"] = -4.0
+upper["gd.CL"] = 4.0  # 1.4
 
 # Time bounds
-lower["trap.tf"] = 50.0
-upper["trap.tf"] = 150.0
+lower["trap.tf"] = 50.0 / scaling["time"]
+# upper["trap.tf"] = 150.0 / scaling["time"]
+upper["trap.tf"] = float("inf")
 
 # State bounds - add reasonable physical bounds
 # Horizontal position (x)
-lower["gd.q[:, 0]"] = -100.0
-upper["gd.q[:, 0]"] = 2000.0
+lower["gd.q[:, 0]"] = -2000.0 / scaling["distance"]
+upper["gd.q[:, 0]"] = 2000.0 / scaling["distance"]
 
 # Altitude (y)
-lower["gd.q[:, 1]"] = 850.0
-upper["gd.q[:, 1]"] = 1050.0
+lower["gd.q[:, 1]"] = -2000.0 / scaling["distance"]
+upper["gd.q[:, 1]"] = 2000.0 / scaling["distance"]
 
 # Horizontal velocity (vx)
-lower["gd.q[:, 2]"] = 0.0
-upper["gd.q[:, 2]"] = 50.0
+lower["gd.q[:, 2]"] = -200.0 / scaling["velocity"]
+upper["gd.q[:, 2]"] = 200.0 / scaling["velocity"]
 
 # Vertical velocity (vy)
-lower["gd.q[:, 3]"] = -20.0
-upper["gd.q[:, 3]"] = 20.0
+lower["gd.q[:, 3]"] = -200.0 / scaling["velocity"]
+upper["gd.q[:, 3]"] = 200.0 / scaling["velocity"]
 
+lower["gd.qdot"] = -float("inf")
+upper["gd.qdot"] = float("inf")
 
 opt = am.Optimizer(model, x, lower=lower, upper=upper)
-data = opt.optimize({"max_iterations": 200})
-
+data = opt.optimize(
+    {
+        "initial_barrier_param": 0.1,
+        "max_line_search_iterations": 1,
+        "max_iterations": 500,
+        "init_affine_step_multipliers": False,
+    }
+)
 
 with open("hang_glider_opt_data.json", "w") as fp:
     json.dump(data, fp, indent=2)
