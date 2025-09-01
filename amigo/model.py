@@ -783,7 +783,7 @@ class Model:
 
         return Asub, of_dict, wrt_dict
 
-    def get_all_names(self):
+    def get_names(self):
         """
         Get the scoped names of all inputs, constraints and data within the model
         """
