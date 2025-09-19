@@ -190,19 +190,6 @@ if __name__ == "__main__":
     edge3 = parser.get_conn("LINE3", "T3D2")
     edge4 = parser.get_conn("LINE4", "T3D2")
 
-    # Print out mesh information
-    print("Node Coords")
-    print(tabulate(X, headers=["x", "y", "z"]))
-
-    print("\nConnectivity")
-    print(tabulate(conn, headers=["n1", "n2", "n3"]))
-
-    print("\nBoundary condition edges")
-    print("Edge1:", edge1.flatten())
-    print("Edge2:", edge2.flatten())
-    print("Edge3:", edge3.flatten())
-    print("Edge4:", edge4.flatten())
-
     # Concatenate the unique node tgas for the dirichlet bc
     dirichlet_bc_tags = np.concatenate(
         (
@@ -214,14 +201,10 @@ if __name__ == "__main__":
         axis=None,
     )
     dirichlet_bc_tags = np.unique(dirichlet_bc_tags, sorted=True)
-    print("\nDirichlet BC Tags:", dirichlet_bc_tags)
 
     # Define the total number of elements and nodes in the mesh
     nelems = conn.shape[0]
     nnodes = X.shape[0]
-
-    # Element tags for coil region
-    # coil_elem_tags = np.linspace(0, nelems - 1, nelems)
 
     # Define parser arguments
     parser = argparse.ArgumentParser()
@@ -341,5 +324,5 @@ if __name__ == "__main__":
     ans.get_array()[:] = spsolve(csr_mat, g.get_array())
     ans_local = ans
     vals = ans_local.get_array()[model.get_indices("src.u")]
-    utils.plot_solution(X, vals)
+    utils.plot_solution(X, conn, vals)
     plt.show()

@@ -12,7 +12,9 @@ def plot_matrix(dense_mat):
     return
 
 
-def plot_solution(xyz_nodeCoords, conn, z, title="fig", fname="contour.jpg", flag=False):
+def plot_solution(
+    xyz_nodeCoords, conn, z, title="fig", fname="contour.jpg", flag=False
+):
     """
     Create a contour plot of the solution.
     Inputs:
@@ -42,7 +44,6 @@ def plot_solution(xyz_nodeCoords, conn, z, title="fig", fname="contour.jpg", fla
     # tri = mtri.Triangulation(x, y)
     tri = mtri.Triangulation(x, y, conn)
 
-
     # Define colormap
     cmap = "coolwarm"
 
@@ -54,7 +55,7 @@ def plot_solution(xyz_nodeCoords, conn, z, title="fig", fname="contour.jpg", fla
     )  # optional contour lines
 
     # Overlay mesh
-    ax.triplot(tri, color="k", lw=0.3, alpha=0.8)  # mesh edges
+    ax.triplot(tri, color="0.7", lw=0.3, alpha=0.8)  # lighter grey
 
     norm = mpl.colors.Normalize(vmin=min_level, vmax=max_level)
     cbar = fig.colorbar(

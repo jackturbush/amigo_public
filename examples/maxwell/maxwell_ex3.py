@@ -94,7 +94,7 @@ class Maxwell(am.Component):
         self.objective["obj"] = u[0] * res[0] + u[1] * res[1] + u[2] * res[2]
 
 
-class Coil(am.Component):
+class Magnets(am.Component):
     def __init__(self):
         super().__init__()
 
@@ -105,40 +105,57 @@ class Coil(am.Component):
             args.append({"n": n})
         self.set_args(args)
 
+        # Add input
+        self.add_input("u", shape=(3,), value=0.0)  # Element solution
+
         # x/y coords for each node
         self.add_data("x_coord", shape=(3,))
         self.add_data("y_coord", shape=(3,))
 
-        # Constants
-        self.add_constant("Jz", value=5.0)
+        # Magnetization data
+        self.add_data("Mx")
+        self.add_data("My")
 
-        # Add input
-        self.add_input("u", shape=(3,), value=0.0)  # Element solution
+        # Constants
+        self.add_constant("mu0", value=4 * np.pi * 10**-7)
 
         # Objective
         self.add_objective("obj")
         return
 
     def compute(self, n=None):
-        # Extract inputs
-        u = self.inputs["u"]
-
         # Define gauss quad weights and points
         qwts = [1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0]
         qxi_qeta = [[0.5, 0.5], [0.5, 0.0], [0.0, 0.5]]
         xi, eta = qxi_qeta[n]
 
+        # Extract inputs
+        u = self.inputs["u"]
+
         # Extract mesh data
         X = self.data["x_coord"]
         Y = self.data["y_coord"]
         N, N_xi, N_ea = compute_shape_derivs(xi, eta, X, Y, self.vars)
-        detJ = self.vars["detJ"]
-        Jz = self.constants["Jz"]
 
+        # Set the values of the shape funcs derivs
+        Nx = self.vars["Nx"]
+        Ny = self.vars["Ny"]
+
+        # Compute residual
+        detJ = self.vars["detJ"]
+
+        # Extract data
+        Mx = self.data["Mx"]
+        My = self.data["My"]
+
+        # Extract constants
+        mu0 = self.constants["mu0"]
+
+        # Constraint
         res = self.vars["res"] = [
-            -1 * qwts[n] * detJ * Jz * N[0],
-            -1 * qwts[n] * detJ * Jz * N[1],
-            -1 * qwts[n] * detJ * Jz * N[2],
+            -mu0 * (Mx * Ny[0] - My * Nx[0]) * detJ * qwts[n],
+            -mu0 * (Mx * Ny[1] - My * Nx[1]) * detJ * qwts[n],
+            -mu0 * (Mx * Ny[2] - My * Nx[2]) * detJ * qwts[n],
         ]
         self.objective["obj"] = u[0] * res[0] + u[1] * res[1] + u[2] * res[2]
         return
@@ -175,12 +192,14 @@ class MaterialSource(am.Component):
     def __init__(self):
         super().__init__()
         self.add_data("alpha")
+        self.add_data("Mx")
+        self.add_data("My")
         return
 
 
 if __name__ == "__main__":
     # Retrieve mesh information for the analysis
-    inp_filename = "multimaterial.inp"
+    inp_filename = "magnet.inp"
     parser = InpParser()
     parser.parse_inp(inp_filename)
 
@@ -188,8 +207,8 @@ if __name__ == "__main__":
     X = parser.get_nodes()
 
     # Get element connectivity
-    conn_surface1 = parser.get_conn("SURFACE1", "CPS3")
-    conn_surface2 = parser.get_conn("SURFACE2", "CPS3")
+    conn_surface1 = parser.get_conn("SURFACE1", "CPS3")  # Air
+    conn_surface2 = parser.get_conn("SURFACE2", "CPS3")  # Magnet
     conn = np.concatenate((conn_surface1, conn_surface2))
 
     # Get the boundary condition nodes
@@ -201,16 +220,14 @@ if __name__ == "__main__":
     edge6 = parser.get_conn("LINE6", "T3D2")
     edge7 = parser.get_conn("LINE7", "T3D2")
     edge8 = parser.get_conn("LINE8", "T3D2")
-    edge9 = parser.get_conn("LINE9", "T3D2")
-    edge10 = parser.get_conn("LINE10", "T3D2")
 
-    # Concatenate the unique node tgas for the dirichlet bc
+    # Concatenate the unique node tags for the dirichlet bc
     dirichlet_bc_tags = np.concatenate(
         (
-            edge9.flatten(),
-            edge8.flatten(),
-            edge7.flatten(),
-            edge6.flatten(),
+            edge1.flatten(),
+            edge2.flatten(),
+            edge3.flatten(),
+            edge4.flatten(),
         ),
         axis=None,
     )
@@ -272,8 +289,8 @@ if __name__ == "__main__":
     maxwell = Maxwell()
     model.add_component(name="maxwell", size=nelems, comp_obj=maxwell)
 
-    coils = Coil()
-    model.add_component(name="coils", size=nelems, comp_obj=coils)
+    magnets = Magnets()
+    model.add_component(name="magnets", size=nelems, comp_obj=magnets)
 
     dirichlet_bc = DirichletBc()
     model.add_component(
@@ -290,29 +307,38 @@ if __name__ == "__main__":
     # Ex: maxwell.y_coord = src.y_coord[conn]
     model.link("maxwell.x_coord", "node_src.x_coord", tgt_indices=conn)
     model.link("maxwell.y_coord", "node_src.y_coord", tgt_indices=conn)
-    model.link("coils.x_coord", "node_src.x_coord", tgt_indices=conn)
-    model.link("coils.y_coord", "node_src.y_coord", tgt_indices=conn)
+    model.link("magnets.x_coord", "node_src.x_coord", tgt_indices=conn)
+    model.link("magnets.y_coord", "node_src.y_coord", tgt_indices=conn)
 
     # Link the solution vectors
-    model.link("coils.u", "node_src.u", tgt_indices=conn)
+    model.link("magnets.u", "node_src.u", tgt_indices=conn)
     model.link("maxwell.u", "node_src.u", tgt_indices=conn)
 
     # Link the material properties for each surface
-    # Element tags for surface 1
     material1_indices = np.linspace(
-        0, len(conn_surface1) - 1, len(conn_surface1), dtype=int
+        0,
+        len(conn_surface1) - 1,
+        len(conn_surface1),
+        dtype=int,
     )
-
-    # Element tags for surface 2
     material2_indices = np.linspace(
-        0, len(conn_surface2) - 1, len(conn_surface2), dtype=int
+        0,
+        len(conn_surface2) - 1,
+        len(conn_surface2),
+        dtype=int,
     ) + int(len(conn_surface1))
 
+    # Material 1 -> Air
+    # Material 2 -> Magnet
     # material_src.alpha1 = maxwell.alpha[material1_indices]
-    # Surface 1 = alpha[0]
-    # Surface 2 = alpha[1]
     model.link("material_src.alpha[0]", "maxwell.alpha", tgt_indices=material1_indices)
     model.link("material_src.alpha[1]", "maxwell.alpha", tgt_indices=material2_indices)
+
+    model.link("material_src.Mx[0]", "magnets.Mx", tgt_indices=material1_indices)
+    model.link("material_src.Mx[1]", "magnets.Mx", tgt_indices=material2_indices)
+
+    model.link("material_src.My[0]", "magnets.My", tgt_indices=material1_indices)
+    model.link("material_src.My[1]", "magnets.My", tgt_indices=material2_indices)
 
     # Link dirichlet bc nodes
     model.link("node_src.u", "dirichlet_bc.u", src_indices=dirichlet_bc_tags)
@@ -341,8 +367,12 @@ if __name__ == "__main__":
     data = model.get_data_vector()
     data["node_src.x_coord"] = X[:, 0]
     data["node_src.y_coord"] = X[:, 1]
-    data["material_src.alpha[0]"] = 10.0
-    data["material_src.alpha[1]"] = 100.0
+    data["material_src.alpha[0]"] = 10.0  # Air
+    data["material_src.alpha[1]"] = 100.0  # Magnet
+    data["material_src.Mx[0]"] = 0.0  # Air
+    data["material_src.Mx[1]"] = 100.0  # Magnet
+    data["material_src.My[0]"] = 0.0  # Air
+    data["material_src.My[1]"] = 100.0  # Magnet
     problem = model.get_opt_problem()
 
     mat = problem.create_matrix()
