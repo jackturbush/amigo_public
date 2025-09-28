@@ -56,8 +56,7 @@ class BSplineSource(am.Component):
             n (int) : Number of interpolating points
         """
         super().__init__()
-        self.n = n
-        self.add_input("x", shape=n)
+        self.add_input("x")
         return
 
 
@@ -281,11 +280,14 @@ scaling = {"velocity": 100.0, "altitude": 1000.0, "range": 1000.0, "mass": 1000.
 # Create component instances
 ac = AircraftDynamics(scaling)
 trap = TrapezoidRule()
-src = BSplineSource(n=10)
+bspline_src = BSplineSource()
 bspline = am.BSplineInterpolant(npts=(num_time_steps + 1), k=4, n=10)
 obj = Objective()
 ic = InitialConditions(scaling)
 fc = FinalConditions(scaling)
+
+# Number of bspline control points
+nctrl = 10
 
 # Create the model
 module_name = "time_to_climb"
@@ -294,7 +296,7 @@ model = am.Model(module_name)
 # Add components to the model
 model.add_component("ac", num_time_steps + 1, ac)
 model.add_component("trap", 5 * num_time_steps, trap)
-model.add_component("src", 1, src)
+model.add_component("src", nctrl, bspline_src)
 model.add_component("bspline", num_time_steps + 1, bspline)
 model.add_component("obj", 1, obj)
 model.add_component("ic", 1, ic)
@@ -324,7 +326,7 @@ model.link("ac.q[0, :]", "ic.q[0, :]")
 model.link(f"ac.q[{num_time_steps}, :]", "fc.q[0, :]")
 
 # Add the bspline links
-bspline.add_links("bspline", num_time_steps + 1, model, "src.x")
+bspline.add_links("bspline", model, "src.x")
 
 # Build the module if requested
 if args.build:
@@ -347,7 +349,7 @@ if args.build:
 model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
 
 data = model.get_data_vector()
-bspline.set_data("bspline", num_time_steps + 1, data)
+bspline.set_data("bspline", data)
 
 print(f"Num variables:              {model.num_variables}")
 print(f"Num constraints:            {model.num_constraints}")

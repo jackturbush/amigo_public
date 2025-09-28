@@ -123,7 +123,7 @@ class BSplineInterpolant(Component):
         # Set the knot locations
         t = np.zeros(self.n + self.k)
         t[: self.k] = 0.0
-        t[-self.k : :] = 1.0
+        t[-self.k : :] = self.length
         t[self.k - 1 : -self.k + 1] = np.linspace(0, self.length, self.n - self.k + 2)
 
         return t
@@ -136,10 +136,10 @@ class BSplineInterpolant(Component):
         t = self.compute_knots()
 
         # Special case for right endpoint
-        xi_clamped = np.clip(self.xi, t[0], t[-1])
+        xi_clip = np.clip(self.xi, t[0], t[-1])
 
         # Find span index i such that t[i] <= x < t[i+1]
-        span = np.searchsorted(t, xi_clamped, side="right") - 1
+        span = np.searchsorted(t, xi_clip, side="right") - 1
         span = np.clip(span, self.k - 1, self.n - 1)
 
         N = np.zeros((self.npts, self.k), dtype=float)
@@ -158,9 +158,10 @@ class BSplineInterpolant(Component):
                     right = t[i + 1 + r]
                     denom = right - left
                     temp = 0.0 if denom == 0.0 else N_j[r] / denom
-                    N_j[r] = saved + (right - xi_clamped[j]) * temp
-                    saved = (xi_clamped[j] - left) * temp
+                    N_j[r] = saved + (right - xi_clip[j]) * temp
+                    saved = (xi_clip[j] - left) * temp
                 N_j[d] = saved
+
             N[j, :] = N_j
 
         # Handle x == t[-1]
@@ -207,7 +208,7 @@ class BSplineInterpolant(Component):
                 ndu[d, d] = saved
 
             # ders[0, :] are the basis values; ders[1, :] first deriv; ders[2, :] second, etc.
-            ders = np.zeros((deriv + 1, k), dtype=float)
+            ders = np.zeros((deriv + 1, self.k), dtype=float)
             for r in range(self.k):
                 ders[0, r] = ndu[r, self.k - 1]
 
@@ -281,11 +282,16 @@ class BSplineInterpolant(Component):
 
         index = self.k - 1
         for i in range(self.npts):
-            while index < self.n and self.xi[i] > t[index + 1]:
-                index += 1
+            if self.xi[i] < t[self.k - 1]:
+                index = self.k - 1
+            elif self.xi[i] > t[self.n - 1]:
+                index = self.n - 1
+            else:
+                while index < (self.n - 1) and self.xi[i] >= t[index + 1]:
+                    index += 1
 
             for j in range(self.k):
-                src = f"{src_name}[0, {index - self.k + 1 + j}]"
+                src = f"{src_name}[{index - self.k + 1 + j}]"
                 target = f"{name}.input[{i}, {j}]"
                 model.link(src, target)
 
