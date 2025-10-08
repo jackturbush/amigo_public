@@ -1,5 +1,5 @@
 import math
-from .expressions import Expr, UnaryNode, OpNode
+from .expressions import Expr, UnaryNode, OpNode, ConstNode
 
 
 def abs(expr):
@@ -79,4 +79,33 @@ def log10(expr):
 
 
 def atan2(a, b):
-    return Expr(OpNode("atan2", a.node, b.node))
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        raise ValueError("Neither argument is active")
+    elif isinstance(a, (int, float)):
+        return Expr(OpNode("atan2", ConstNode(value=a), b.node))
+    elif isinstance(b, (int, float)):
+        return Expr(OpNode("atan2", a.node, ConstNode(value=b)))
+    else:
+        return Expr(OpNode("atan2", a.node, b.node))
+
+
+def min2(a, b):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        raise ValueError("Neither argument is active")
+    elif isinstance(a, (int, float)):
+        return Expr(OpNode("min2", ConstNode(value=a), b.node))
+    elif isinstance(b, (int, float)):
+        return Expr(OpNode("min2", a.node, ConstNode(value=b)))
+    else:
+        return Expr(OpNode("min2", a.node, b.node))
+
+
+def max2(a, b):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        raise ValueError("Neither argument is active")
+    elif isinstance(a, (int, float)):
+        return Expr(OpNode("max2", ConstNode(value=a), b.node))
+    elif isinstance(b, (int, float)):
+        return Expr(OpNode("max2", a.node, ConstNode(value=b)))
+    else:
+        return Expr(OpNode("max2", a.node, b.node))

@@ -416,7 +416,7 @@ data = opt.optimize(
         "initial_barrier_param": 0.1,
         "monotone_barrier_fraction": 0.1,
         "convergence_tolerance": 1e-10,
-        "max_line_search_iterations": 30,  # Reasonable for intermediate problem
+        "max_line_search_iterations": 4,  # 30,  # Reasonable for intermediate problem
         "max_iterations": 500,  # Sufficient iterations
         "init_affine_step_multipliers": True,  # Enable for better scaling
     }

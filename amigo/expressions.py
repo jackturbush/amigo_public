@@ -79,6 +79,10 @@ class OpNode(ExprNode):
             return f"A2D::pow({a}, {b})"
         elif self.op == "atan2":
             return f"A2D::atan2({a}, {b})"
+        elif self.op == "min2":
+            return f"A2D::min2({a}, {b})"
+        elif self.op == "max2":
+            return f"A2D::max2({a}, {b})"
         return f"({a} {self.op} {b})"
 
 
@@ -106,6 +110,16 @@ class UnaryNegNode(ExprNode):
         return f"-({a})"
 
 
+def _to_expr(val):
+    if isinstance(val, Expr):
+        return val
+    if isinstance(val, ExprNode):
+        return Expr(val)
+    if isinstance(val, (int, float)):
+        return Expr(ConstNode(value=val))
+    raise TypeError(f"Unsupported value: {val}")
+
+
 class Expr:
     def __init__(self, node: ExprNode):
         self.name = None
@@ -116,52 +130,43 @@ class Expr:
         return Expr(UnaryNegNode(self.node))
 
     def __add__(self, other):
-        return Expr(OpNode("+", self, self._to_expr(other)))
+        return Expr(OpNode("+", self, _to_expr(other)))
 
     def __sub__(self, other):
-        return Expr(OpNode("-", self, self._to_expr(other)))
+        return Expr(OpNode("-", self, _to_expr(other)))
 
     def __mul__(self, other):
-        return Expr(OpNode("*", self, self._to_expr(other)))
+        return Expr(OpNode("*", self, _to_expr(other)))
 
     def __truediv__(self, other):
-        return Expr(OpNode("/", self, self._to_expr(other)))
+        return Expr(OpNode("/", self, _to_expr(other)))
 
     def __pow__(self, other):
-        return Expr(OpNode("**", self, self._to_expr(other)))
+        return Expr(OpNode("**", self, _to_expr(other)))
 
     def __radd__(self, other):
-        return Expr(OpNode("+", self._to_expr(other), self))
+        return Expr(OpNode("+", _to_expr(other), self))
 
     def __rsub__(self, other):
-        return Expr(OpNode("-", self._to_expr(other), self))
+        return Expr(OpNode("-", _to_expr(other), self))
 
     def __rmul__(self, other):
-        return Expr(OpNode("*", self._to_expr(other), self))
+        return Expr(OpNode("*", _to_expr(other), self))
 
     def __rtruediv__(self, other):
-        return Expr(OpNode("/", self._to_expr(other), self))
+        return Expr(OpNode("/", _to_expr(other), self))
 
     def __rpow__(self, other):
-        return Expr(OpNode("**", self._to_expr(other), self))
+        return Expr(OpNode("**", _to_expr(other), self))
 
     def __getitem__(self, idx):
         if isinstance(idx, tuple):
-            idx_node = tuple(self._to_expr(i) for i in idx)
+            idx_node = tuple(_to_expr(i) for i in idx)
         else:
-            idx_node = self._to_expr(idx)
+            idx_node = _to_expr(idx)
         return Expr(IndexNode(self.node, idx_node))
 
     def generate_cpp(self, index=None, use_vars=True):
         if use_vars and self.name is not None:
             return self.name
         return self.node.generate_cpp(index=index)
-
-    def _to_expr(self, val):
-        if isinstance(val, Expr):
-            return val
-        if isinstance(val, ExprNode):
-            return Expr(val)
-        if isinstance(val, (int, float)):
-            return Expr(ConstNode(value=val))
-        raise TypeError(f"Unsupported value: {val}")

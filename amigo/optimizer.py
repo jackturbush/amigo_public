@@ -490,7 +490,7 @@ class Optimizer:
             if self.barrier_param <= 0.999 * tol and res_norm < tol:
                 opt_data["converged"] = True
                 break
-            elif res_norm < 0.1 * self.barrier_param:
+            elif res_norm <= 0.1 * self.barrier_param:
                 barrier_converged = True
 
             # Check if the barrier problem has converged

@@ -354,25 +354,18 @@ Q[:, 0] = rho
 Q[:, 1] = rho * u
 Q[:, 2] = rho * E
 
-# Q = nozzle.explicit(Q, dt=0.01, niters=3500)
+Q = nozzle.explicit(Q, dt=0.01, niters=3500)
 
-# fig, ax = plt.subplots(2, 1)
-# ax[0].plot(nozzle.x_cell, nozzle.A_cell)
-# ax[1].plot(nozzle.x_cell, nozzle.dAdx_cell)
-# rho = Q[:, 0]
-# u = Q[:, 1] / rho
-# p = (gamma - 1.0) * (Q[:, 2] - rho * u**2)
+fig, ax = plt.subplots(2, 1)
+ax[0].plot(nozzle.x_cell, nozzle.A_cell)
+ax[1].plot(nozzle.x_cell, nozzle.dAdx_cell)
+rho = Q[:, 0]
+u = Q[:, 1] / rho
+p = (gamma - 1.0) * (Q[:, 2] - 0.5 * rho * u**2)
 
-# fig, ax = plt.subplots(4, 1)
-# ax[0].plot(nozzle.x_cell, rho)
-# ax[1].plot(nozzle.x_cell, u)
-# ax[2].plot(nozzle.x_cell, p)
-# ax[3].plot(nozzle.x_cell, rho**gamma / p)
-# plt.show()
-
-A = 0.73
-QL = np.array([0.5, 0.25, 1.3])
-QR = np.array([0.489, 0.245, 1.29])
-
-roe = RoeFlux()
-roe.test(A, QL, QR)
+fig, ax = plt.subplots(4, 1)
+ax[0].plot(nozzle.x_cell, rho)
+ax[1].plot(nozzle.x_cell, u)
+ax[2].plot(nozzle.x_cell, p)
+ax[3].plot(nozzle.x_cell, rho**gamma / p)
+plt.show()

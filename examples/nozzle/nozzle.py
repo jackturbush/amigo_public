@@ -63,10 +63,15 @@ class RoeFlux(am.Component):
         fp = self.vars["fp"] = ainv * ainv * (pR - pL)
         fu = self.vars["fu"] = (uR - uL) * rho * ainv
 
-        # Compute the weights
-        w0 = self.vars["w0"] = ((rhoR - rhoL) - fp) * am.abs(u)
-        w1 = self.vars["w1"] = (0.5 * (fp + fu)) * am.abs(u + a)
-        w2 = self.vars["w2"] = (0.5 * (fp - fu)) * am.abs(u - a)
+        # Entropy fix with a square root function
+        h = self.vars["h"] = 0.05 * (am.abs(u) + a)
+        lam1 = self.vars["lam1"] = am.sqrt(u * u + h * h / 4)
+        lam2 = self.vars["lam2"] = am.sqrt((u + a) * (u + a) + h * h / 4)
+        lam3 = self.vars["lam3"] = am.sqrt((u - a) * (u - a) + h * h / 4)
+
+        w0 = self.vars["w0"] = ((rhoR - rhoL) - fp) * lam1
+        w1 = self.vars["w1"] = (0.5 * (fp + fu)) * lam2
+        w2 = self.vars["w2"] = (0.5 * (fp - fu)) * lam3
 
         Fr = 0.5 * w0 * u * u + w1 * (H + u * a) + w2 * (H - u * a)
         self.constraints["res"] = [
@@ -111,8 +116,60 @@ class Nozzle(am.Component):
         ]
 
 
-class InletFlux(am.Component):
-    def __init__(self, gamma=1.4, T_res=1.0, p_res=1.0):
+class NozzleSolutionCalc(am.Component):
+    def __init__(self, gamma=1.4, T_res=1.0, p_res=1.0, p_back=0.9):
+        super().__init__()
+
+        self.add_constant("gamma", value=gamma)
+        self.add_constant("gam1", value=(gamma - 1.0))
+        self.add_constant("ggam1", value=gamma / (gamma - 1.0))
+        self.add_constant("gap1", value=(gamma + 1.0))
+        self.add_constant("exponent", value=(gamma + 1.0) / (2.0 * (gamma - 1.0)))
+
+        p_ratio = (2.0 / (gamma + 1)) ** (gamma / (gamma - 1.0))
+        if p_back / p_res < p_ratio:
+            raise ValueError("This is not a subsonic branch")
+
+        # Compute the Mach number at the outlet - assume we have a subsonic solution
+        expn = (gamma - 1.0) / gamma
+        M_out = np.sqrt(2.0 / (gamma - 1.0) * ((p_res / p_back) ** expn - 1.0))
+
+        # The Mach number at the outlet should
+        self.add_constant("M_outlet", value=M_out)
+
+        # Add the inlet and outlet areas
+        self.add_input("A_inlet")
+        self.add_input("A_outlet")
+
+        # Add the Mach number at the inlet
+        self.add_input("M_inlet")
+
+        # Add the constraint
+        self.add_constraint("res")
+
+    def compute(self):
+        gam1 = self.constants["gam1"]
+        gap1 = self.constants["gap1"]
+        expn = self.constants["exponent"]
+
+        A_in = self.inputs["A_inlet"]
+        A_out = self.inputs["A_outlet"]
+
+        M_out = self.constants["M_outlet"]
+        M_in = self.inputs["M_inlet"]
+
+        fact_out = 1.0 + 0.5 * gam1 * M_out * M_out
+        A_star = self.vars["A_star"] = (
+            A_out * M_out * (2.0 / gap1 * fact_out) ** (-expn)
+        )
+
+        fact_in = 1.0 + 0.5 * gam1 * M_in * M_in
+
+        self.constraints["res"] = A_star / A_in - M_in * (2 / gap1 * fact_in) ** (-expn)
+
+
+class SubsonicInletFlux(am.Component):
+    def __init__(self, gamma=1.4, T_res=1.0, p_res=1.0, p_back=0.9):
         super().__init__()
 
         self.add_constant("gamma", value=gamma)
@@ -132,6 +189,9 @@ class InletFlux(am.Component):
         self.add_input("F", shape=3)
         self.add_constraint("res", shape=3)
 
+        # Add the inlet Mach number as an additional constraint
+        self.add_input("M_inlet")
+
     def compute(self):
         gamma = self.constants["gamma"]
         gam1 = self.constants["gam1"]
@@ -144,24 +204,35 @@ class InletFlux(am.Component):
         Q = self.inputs["Q"]
         F = self.inputs["F"]
 
+        # Get the Mach number at the inlet
+        M_inlet = self.inputs["M_inlet"]
+
         # Compute the velocity and speed of sound at the input
         rho_int = Q[0]
         u_int = self.vars["u_int"] = Q[1] / Q[0]
         p_int = self.vars["p_int"] = gam1 * (Q[2] - 0.5 * rho_int * u_int * u_int)
         a_int = self.vars["a_int"] = am.sqrt(gamma * p_int / rho_int)
 
+        # Compute the area ratio
+        M_factor = self.vars["M_factor"] = 1.0 + 0.5 * gam1 * M_inlet * M_inlet
+
+        # Compute the inlet speed of sound
+        a_inlet = am.sqrt(T_res / M_factor)
+
+        # Compute the inlet velocity
+        u_inlet = M_inlet * a_inlet
+
         # Compute the two invariants
-        a_res = self.vars["a_res"] = am.sqrt(T_res)
         invar_int = self.vars["invar_int"] = u_int - 2.0 * a_int / gam1
-        invar_res = self.vars["invar_res"] = 2 * a_res / gam1
+        invar_inlet = self.vars["invar_inlet"] = u_inlet + 2.0 * a_inlet / gam1
 
         # Based on the invariants, compute the velocity and speed of sound
-        u_b = self.vars["u_b"] = 0.5 * (invar_int + invar_res)
-        a_b = self.vars["a_b"] = 0.25 * gam1 * (invar_res - invar_int)
+        u_b = self.vars["u_b"] = 0.5 * (invar_int + invar_inlet)
+        a_b = self.vars["a_b"] = 0.25 * gam1 * (invar_inlet - invar_int)
         rho_b = self.vars["rho_b"] = (a_b * a_b * S_res / gamma) ** (1.0 / gam1)
 
         # Compute the remaining states
-        p_b = self.vars["p_b"] = rho_b * a_b**2 / gamma
+        p_b = self.vars["p_b"] = rho_b * a_b * a_b / gamma
         H_b = self.vars["H_b"] = ggam1 * p_b / rho_b + 0.5 * u_b * u_b
 
         # Compute the constraints
@@ -270,7 +341,7 @@ def plot_solution(rho, u, p, p_target, num_cells, length):
         fig, ax = plt.subplots(3, 1, figsize=(10, 6))
         colors = niceplots.get_colors_list()
 
-        labels = [r"$\rho$", "$u$", "$p$"]
+        labels = [r"$\rho$", "$M$", "$p$"]
         xlabel = "location"
         xticks = [0, 2, 4, 6, 8, 10]
 
@@ -281,7 +352,11 @@ def plot_solution(rho, u, p, p_target, num_cells, length):
 
         indices = [0, 1, 2, 2]
         cindices = [0, 0, 0, 1]
-        data = [rho, u, p, p_target]
+
+        gamma = 1.4
+        a = np.sqrt(gamma * p / rho)
+
+        data = [rho, u / a, p, p_target]
         label = [None, None, "solution", "target"]
 
         for i, (index, c, y) in enumerate(zip(indices, cindices, data)):
@@ -360,8 +435,6 @@ def plot_nozzle(A, dAdx, num_cells, length):
             )
 
         fontname = "Helvetica"
-        # ax[-1].legend(loc="lower right", prop={"family": fontname, "size": 12})
-
         for axis in ax:
             niceplots.adjust_spines(axis, outward=True)
 
@@ -463,7 +536,7 @@ T_res = T_reservoir / T_ref
 p_res = p_reservoir / p_ref
 
 # Set the back-pressure
-p_back = 0.5 * p_res
+p_back = 0.8 * p_res
 
 # Set values for the length
 length = 10.0
@@ -473,7 +546,7 @@ dx = length / num_cells
 
 # Set the pressure values
 p_inlet = 0.95 * p_res
-p_min = 0.2 * p_res
+p_min = 0.45 * p_res
 p_outlet = p_back
 
 # Number of control points
@@ -486,11 +559,17 @@ model = am.Model("nozzle")
 model.add_component("flux", num_cells - 1, RoeFlux(gamma=gamma))
 
 # Add the flux computations at the end points
-model.add_component("inlet", 1, InletFlux(gamma=gamma, T_res=T_res, p_res=p_res))
+inlet = SubsonicInletFlux(gamma=gamma, T_res=T_res, p_res=p_res)
+model.add_component("inlet", 1, inlet)
 model.add_component("outlet", 1, OutletFlux(gamma=gamma, p_back=p_back))
 
 # Add the 1D nozzle
 model.add_component("nozzle", num_cells, Nozzle(gamma=gamma, dx=(length / num_cells)))
+
+# Add the nozzle boundary condition calculation
+model.add_component(
+    "calc", 1, NozzleSolutionCalc(T_res=T_res, p_res=p_res, p_back=p_back)
+)
 
 # Add the objective function
 model.add_component("objective", num_cells, Objective())
@@ -540,6 +619,11 @@ model.link("nozzle.FR[-1, :]", "outlet.F[0, :]")
 # Link the objective states
 model.link("nozzle.Q", "objective.Q")
 
+# Connect the nozzle boundary condition calculations
+model.link("area.output[0]", "calc.A_inlet")
+model.link("area.output[-1]", "calc.A_outlet")
+model.link("inlet.M_inlet", "calc.M_inlet")
+
 if args.build:
     compile_args = []
     link_args = []
@@ -576,9 +660,10 @@ lower = model.create_vector()
 upper = model.create_vector()
 
 # Set the initial solution guess
-rho = 1.0
-u = 0.01
-p = 1.0 / gamma
+rho = 0.5
+u = 0.2
+p = 0.5 / gamma
+
 E = (p / rho) / (gamma - 1.0) + 0.5 * u**2
 H = E + p / rho
 x["nozzle.Q[:, 0]"] = rho
@@ -592,6 +677,11 @@ x["nozzle.FL[:, 2]"] = rho * u * H
 x["nozzle.FR[:, 0]"] = rho * u
 x["nozzle.FR[:, 1]"] = rho * u**2 + p
 x["nozzle.FR[:, 2]"] = rho * u * H
+
+# Set the bounds for the inlet Mach number
+x["inlet.M_inlet"] = u
+lower["inlet.M_inlet"] = 0.0
+upper["inlet.M_inlet"] = 1.0
 
 # Set the lower and upper bounds for Q
 lower["nozzle.Q"] = float("-inf")
@@ -629,7 +719,8 @@ opt_history = opt.optimize(
         "max_iterations": 100,
         "record_components": ["area_ctrl.area"],
         "max_line_search_iterations": 4,
-        "convergence_tolerance": 1e-11,
+        "convergence_tolerance": 1e-12,
+        "monotone_barrier_fraction": 0.01,
     }
 )
 
