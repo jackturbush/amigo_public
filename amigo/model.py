@@ -1183,7 +1183,7 @@ class Model:
                         node_name = (
                             f"{comp_name}.{var_name}[{i}, {', '.join(map(str, idx))}]"
                         )
-                        
+
                         # Track aliases for this global variable ID
                         if index not in global_var_aliases:
                             global_var_aliases[index] = []
@@ -1195,17 +1195,17 @@ class Model:
 
         # Set the variable names
         graph = nx.Graph()
-        
+
         # Create separate nodes for each alias and track linkage relationships
         alias_to_node_id = {}  # alias_string -> node_id
         linkage_edges = []  # list of (node_id1, node_id2) for dashed edges
-        
+
         # Add variable nodes (one per alias)
         node_counter = 0
         for global_id, aliases in global_var_aliases.items():
             if not aliases:
                 continue
-                
+
             # Create nodes for each alias
             alias_nodes = []
             for alias_name, vtype in aliases:
@@ -1213,21 +1213,22 @@ class Model:
                 node_counter += 1
                 alias_to_node_id[alias_name] = node_id
                 alias_nodes.append(node_id)
-                
+
                 # Determine color based on type
                 node_color = (
-                    "red" if vtype == "constraint" 
+                    "red"
+                    if vtype == "constraint"
                     else ("green" if vtype == "input" else "blue")
                 )
-                
+
                 graph.add_node(
-                    node_id, 
-                    label=alias_name, 
-                    title=alias_name, 
-                    shape=var_shape, 
-                    color=node_color
+                    node_id,
+                    label=alias_name,
+                    title=alias_name,
+                    shape=var_shape,
+                    color=node_color,
                 )
-            
+
             # Add dashed linkage edges between aliases of the same global variable
             for i in range(len(alias_nodes)):
                 for j in range(i + 1, len(alias_nodes)):
@@ -1264,13 +1265,15 @@ class Model:
                     for idx in np.ndindex(vars.shape):
                         array_idx = (i,) + idx
                         global_id = array[array_idx]
-                        
+
                         # Find the alias node for this global variable
-                        alias_name = f"{comp_name}.{var_name}[{i}, {', '.join(map(str, idx))}]"
+                        alias_name = (
+                            f"{comp_name}.{var_name}[{i}, {', '.join(map(str, idx))}]"
+                        )
                         if alias_name in alias_to_node_id:
                             var_node_id = alias_to_node_id[alias_name]
                             graph.add_edge(comp_index, var_node_id)
-        
+
         # Add dashed linkage edges between aliased variables
         for node1, node2 in linkage_edges:
             graph.add_edge(node1, node2, dashes=True, color="gray")
