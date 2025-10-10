@@ -1194,7 +1194,10 @@ class Model:
                         if vtype is not None:
                             if node_types[index] is None:
                                 node_types[index] = vtype
-                            elif node_types[index] != "constraint" and vtype == "constraint":
+                            elif (
+                                node_types[index] != "constraint"
+                                and vtype == "constraint"
+                            ):
                                 node_types[index] = "constraint"
 
             # Add the component names for only selected time steps:
@@ -1209,7 +1212,9 @@ class Model:
             if name is not None:
                 vtype = node_types[i]
                 node_color = (
-                    "red" if vtype == "constraint" else ("green" if vtype == "input" else "blue")
+                    "red"
+                    if vtype == "constraint"
+                    else ("green" if vtype == "input" else "blue")
                 )
                 graph.add_node(
                     int(i), label=name, title=name, shape=var_shape, color=node_color
