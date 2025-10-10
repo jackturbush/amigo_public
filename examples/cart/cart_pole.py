@@ -430,22 +430,27 @@ if comm_rank == 0:
         # Parse timestep argument - can be None, single int, or list
         t = args.graph_timestep
         if t is not None:
-            if t.startswith('[') and t.endswith(']'):
+            if t.startswith("[") and t.endswith("]"):
                 # Parse list format like "[0,5,6]"
                 import ast
+
                 try:
                     t = ast.literal_eval(t)
                 except (ValueError, SyntaxError):
-                    print(f"Warning: Could not parse timestep list '{t}', using all timesteps")
+                    print(
+                        f"Warning: Could not parse timestep list '{t}', using all timesteps"
+                    )
                     t = None
             else:
                 # Try to parse as single integer
                 try:
                     t = int(t)
                 except ValueError:
-                    print(f"Warning: Could not parse timestep '{t}', using all timesteps")
+                    print(
+                        f"Warning: Could not parse timestep '{t}', using all timesteps"
+                    )
                     t = None
-        
+
         graph = model.create_graph(timestep=t)
         net = Network(notebook=True)
 
