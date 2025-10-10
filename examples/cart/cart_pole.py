@@ -316,6 +316,15 @@ parser.add_argument(
     default=False,
     help="Show the graph",
 )
+
+parser.add_argument(
+    "--graph-timestep",
+    dest="graph_timestep",
+    type=int,
+    default=None,
+    help="Show graph for a single timestep (e.g., 0)",
+)
+
 parser.add_argument(
     "--distribute",
     dest="distribute",
@@ -416,13 +425,10 @@ if comm_rank == 0:
         plt.show()
 
     if args.show_graph:
-        # Convert to interactive Pyvis network
         from pyvis.network import Network
 
-        graph = model.create_graph()
-
+        t = args.graph_timestep  # None → all timesteps, int → one timestep
+        graph = model.create_graph(timestep=t)
         net = Network(notebook=True)
         net.from_nx(graph)
-
-        # Show in browser (or inline in Jupyter if notebook=True)
         net.show("cart_pole_graph.html")

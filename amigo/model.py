@@ -1113,7 +1113,13 @@ class Model:
 
         return model_data
 
-    def create_graph(self, comp_list=None, var_shape="dot", comp_shape="square"):
+    def create_graph(
+        self,
+        comp_list=None,
+        timestep=None,
+        var_shape="dot",
+        comp_shape="square",
+    ):
         """
         Create a networkx instance of the model structure
         """
@@ -1136,19 +1142,40 @@ class Model:
 
         # Loop over all the components and add the various names for each variable
         for comp_name, comp in comp_items:
+
+            # Decide which timesteps  to include:
+            if timestep is None:
+                time_indices = range(comp.size)
+            elif isinstance(timestep, int):
+                time_indices = [timestep]
+            elif isinstance(timestep, (tuple, range, list)):
+                time_indices = timestep
+            else:
+                raise ValueError(
+                    "Invalid timestep format. Use int, tuple, list, or range."
+                )
+
             for var_name, array in comp.vars.items():
-                for idx in np.ndindex(array.shape):
-                    index = array[idx]
-                    node_name = f"{comp_name}.{var_name}[{', '.join(map(str, idx))}]"
+                for i in time_indices:
+                    if i >= comp.size:
+                        continue
+                    for idx in np.ndindex(
+                        array.shape[1:]
+                    ):  # Loop over the position indices
 
-                    if node_names[index] == None:
-                        node_names[index] = node_name
-                    else:
-                        node_names[index] += "," + node_name
+                        index = array[(i,) + idx]
+                        node_name = (
+                            f"{comp_name}.{var_name}[{i}, {', '.join(map(str, idx))}]"
+                        )
+                        if node_names[index] == None:
+                            node_names[index] = node_name
+                        else:
+                            node_names[index] += "," + node_name
 
-            # Add the component names
-            for i in range(comp.size):
-                comp_names.append(f"{comp_name}[{i}]")
+            # Add the component names for only selected time steps:
+            for i in time_indices:
+                if i < comp.size:
+                    comp_names.append(f"{comp_name}[{i}]")
 
         # Set the variable names
         graph = nx.Graph()
@@ -1159,26 +1186,49 @@ class Model:
                 graph.add_node(int(i), label=name, title=name, shape=var_shape)
 
         # Add all of the individual components within each component group
+        # and build a mapping from (component name, timestep) -> node id
+        comp_node_id = {}
         for i, name in enumerate(comp_names):
+            node_id = int(i + self.num_variables)
             graph.add_node(
-                int(i + self.num_variables),
+                node_id,
                 label=name,
                 title=name,
                 shape=comp_shape,
             )
 
-        # Add the edges in the graph - always from variable to component
-        counter = self.num_variables
-        for comp_name, comp in comp_items:
-            for var_name, array in comp.vars.items():
-                for i in range(comp.size):
-                    comp_index = counter + i
+            # name has the form "group[i]"; parse back out (group, i)
+            if "[" in name and name.endswith("]"):
+                cname, idx_str = name.split("[")
+                try:
+                    i_val = int(idx_str[:-1])
+                    comp_node_id[(cname, i_val)] = node_id
+                except ValueError:
+                    pass
 
+        # Add edges between variables and components
+        for comp_name, comp in comp_items:
+            if timestep is None:
+                time_indices = range(comp.size)
+            elif isinstance(timestep, int):
+                time_indices = [timestep]
+            elif isinstance(timestep, (tuple, list, range)):
+                time_indices = timestep
+            else:
+                raise ValueError(
+                    "Invalid timestep format. Use int, tuple, list, or range."
+                )
+
+            for var_name, array in comp.vars.items():
+                for i in time_indices:
+                    if i >= comp.size:
+                        continue
+                    comp_index = comp_node_id.get((comp_name, i))
+                    if comp_index is None:
+                        continue
                     vars = array[i]
                     for idx in np.ndindex(vars.shape):
                         array_idx = (i,) + idx
                         graph.add_edge(int(comp_index), int(array[array_idx]))
-
-            counter += comp.size
 
         return graph
