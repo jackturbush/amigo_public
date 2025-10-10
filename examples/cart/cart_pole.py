@@ -320,9 +320,9 @@ parser.add_argument(
 parser.add_argument(
     "--graph-timestep",
     dest="graph_timestep",
-    type=int,
+    type=str,
     default=None,
-    help="Show graph for a single timestep (e.g., 0)",
+    help="Show graph for timesteps. Can be a single int (e.g., 0) or a list (e.g., '[0,5,6]')",
 )
 
 parser.add_argument(
@@ -427,8 +427,38 @@ if comm_rank == 0:
     if args.show_graph:
         from pyvis.network import Network
 
-        t = args.graph_timestep  # None → all timesteps, int → one timestep
+        # Parse timestep argument - can be None, single int, or list
+        t = args.graph_timestep
+        if t is not None:
+            if t.startswith('[') and t.endswith(']'):
+                # Parse list format like "[0,5,6]"
+                import ast
+                try:
+                    t = ast.literal_eval(t)
+                except (ValueError, SyntaxError):
+                    print(f"Warning: Could not parse timestep list '{t}', using all timesteps")
+                    t = None
+            else:
+                # Try to parse as single integer
+                try:
+                    t = int(t)
+                except ValueError:
+                    print(f"Warning: Could not parse timestep '{t}', using all timesteps")
+                    t = None
+        
         graph = model.create_graph(timestep=t)
         net = Network(notebook=True)
+
         net.from_nx(graph)
+        # net.show_buttons(filter_=["physics"])
+        # net.set_options(
+        #     """
+        #     var options = {
+        #     "interaction": {
+        #         "dragNodes": false
+        #     }
+        #     }
+        #     """
+        # )
+
         net.show("cart_pole_graph.html")
