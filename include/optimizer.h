@@ -882,10 +882,15 @@ class InteriorPointOptimizer {
   /**
    * @brief Compute the complementarity value for all inequalities
    *
+   * This method computes the average complementarity and optionally the
+   * uniformity measure ξ = min_i [w_i y_i / (y^T w / m)]
+   *
    * @param vars The optimization variables
-   * @return T The return complementarity value
+   * @param uniformity_measure Optional pointer to store the uniformity measure
+   * @return T The average complementarity value
    */
-  T compute_complementarity(const std::shared_ptr<OptVector<T>> vars) {
+  T compute_complementarity(const std::shared_ptr<OptVector<T>> vars,
+                           T *uniformity_measure = nullptr) const {
     // Get the dual values for the bound constraints
     const T *zl, *zu;
     vars->get_bound_duals(&zl, &zu);
@@ -901,74 +906,8 @@ class InteriorPointOptimizer {
     Vector<T> &xlam = *vars->get_solution();
 
     T partial_sum[2] = {0.0, 0.0};
-    for (int i = 0; i < num_variables; i++) {
-      // Extract the design variable value
-      int index = design_variable_indices[i];
-      T x = xlam[index];
+    T local_min = uniformity_measure ? std::numeric_limits<T>::max() : 0.0;
 
-      if (!std::isinf(lbx[i])) {
-        partial_sum[0] += (x - lbx[i]) * zl[i];
-        partial_sum[1] += 1.0;
-      }
-      if (!std::isinf(ubx[i])) {
-        partial_sum[0] += (ubx[i] - x) * zu[i];
-        partial_sum[1] += 1.0;
-      }
-    }
-
-    for (int i = 0; i < num_inequalities; i++) {
-      if (!std::isinf(lbc[i])) {
-        partial_sum[0] += sl[i] * zsl[i] + tl[i] * ztl[i];
-        partial_sum[1] += 2.0;
-      }
-
-      if (!std::isinf(ubc[i])) {
-        partial_sum[0] += su[i] * zsu[i] + tu[i] * ztu[i];
-        partial_sum[1] += 2.0;
-      }
-    }
-
-    // Compute the complementarity value across all processors
-    T sum[2];
-    MPI_Allreduce(partial_sum, sum, 2, get_mpi_type<T>(), MPI_SUM, comm);
-
-    if (sum[1] == 0.0) {
-      return 0.0;
-    }
-
-    return sum[0] / sum[1];
-  }
-
-  /**
-   * @brief Compute the uniformity measure ξ = min_i [w_i y_i / (y^T w / m)]
-   *
-   * @param vars The optimization variables
-   * @return T The uniformity measure value
-   */
-  T compute_uniformity_measure(const std::shared_ptr<OptVector<T>> vars) {
-    // First compute the average complementarity (y^T w / m)
-    T avg_complementarity = compute_complementarity(vars);
-
-    if (avg_complementarity <= 0.0) {
-      return 1.0;
-    }
-
-    // Get the dual values for the bound constraints
-    const T *zl, *zu;
-    vars->get_bound_duals(&zl, &zu);
-
-    // Get the slack variable values
-    const T *sl, *tl, *su, *tu;
-    vars->get_slacks(nullptr, &sl, &tl, &su, &tu);
-
-    // Get the dual values for the slacks
-    const T *zsl, *ztl, *zsu, *ztu;
-    vars->get_slack_duals(&zsl, &ztl, &zsu, &ztu);
-
-    Vector<T> &xlam = *vars->get_solution();
-
-    // Compute min_i [w_i y_i / (y^T w / m)]
-    T local_min = std::numeric_limits<T>::max();
     for (int i = 0; i < num_variables; i++) {
       // Extract the design variable value
       int index = design_variable_indices[i];
@@ -976,32 +915,77 @@ class InteriorPointOptimizer {
 
       if (!std::isinf(lbx[i])) {
         T comp = (x - lbx[i]) * zl[i];
-        local_min = std::min(local_min, comp / avg_complementarity);
+        partial_sum[0] += comp;
+        partial_sum[1] += 1.0;
+        if (uniformity_measure) {
+          local_min = std::min(local_min, comp);
+        }
       }
       if (!std::isinf(ubx[i])) {
         T comp = (ubx[i] - x) * zu[i];
-        local_min = std::min(local_min, comp / avg_complementarity);
+        partial_sum[0] += comp;
+        partial_sum[1] += 1.0;
+        if (uniformity_measure) {
+          local_min = std::min(local_min, comp);
+        }
       }
     }
 
     for (int i = 0; i < num_inequalities; i++) {
       if (!std::isinf(lbc[i])) {
-        local_min = std::min(local_min, sl[i] * zsl[i] / avg_complementarity);
-        local_min = std::min(local_min, tl[i] * ztl[i] / avg_complementarity);
+        T comp_sl = sl[i] * zsl[i];
+        T comp_tl = tl[i] * ztl[i];
+        partial_sum[0] += comp_sl + comp_tl;
+        partial_sum[1] += 2.0;
+        if (uniformity_measure) {
+          local_min = std::min(local_min, std::min(comp_sl, comp_tl));
+        }
       }
 
       if (!std::isinf(ubc[i])) {
-        local_min = std::min(local_min, su[i] * zsu[i] / avg_complementarity);
-        local_min = std::min(local_min, tu[i] * ztu[i] / avg_complementarity);
+        T comp_su = su[i] * zsu[i];
+        T comp_tu = tu[i] * ztu[i];
+        partial_sum[0] += comp_su + comp_tu;
+        partial_sum[1] += 2.0;
+        if (uniformity_measure) {
+          local_min = std::min(local_min, std::min(comp_su, comp_tu));
+        }
       }
     }
 
-    // Compute the minimum across all processors
-    T global_min;
-    MPI_Allreduce(&local_min, &global_min, 1, get_mpi_type<T>(), MPI_MIN, comm);
+    // Compute the complementarity value across all processors
+    T sum[2];
+    MPI_Allreduce(partial_sum, sum, 2, get_mpi_type<T>(), MPI_SUM, comm);
 
-    // Clamp to [0, 1]
-    return std::max(0.0, std::min(1.0, global_min));
+    // Compute average complementarity
+    T avg_complementarity = (sum[1] == 0.0) ? 0.0 : sum[0] / sum[1];
+
+    // If uniformity measure is requested, compute it
+    if (uniformity_measure) {
+      T global_min;
+      MPI_Allreduce(&local_min, &global_min, 1, get_mpi_type<T>(), MPI_MIN,
+                    comm);
+
+      if (avg_complementarity <= 0.0) {
+        *uniformity_measure = 1.0;
+      } else {
+        T uniformity = global_min / avg_complementarity;
+        *uniformity_measure = std::max(0.0, std::min(1.0, uniformity));
+      }
+    }
+
+    return avg_complementarity;
+  }
+
+  /**
+   * @brief Compute the uniformity measure ξ = min_i [w_i y_i / (y^T w / m)]
+   * @param vars The optimization variables
+   * @return T The uniformity measure value
+   */
+  T compute_uniformity_measure(const std::shared_ptr<OptVector<T>> vars) const {
+    T uniformity;
+    compute_complementarity(vars, &uniformity);
+    return uniformity;
   }
 
   /**
