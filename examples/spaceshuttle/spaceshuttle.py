@@ -421,7 +421,7 @@ data = opt.optimize(
         # Use the new heuristic barrier parameter update
         "barrier_strategy": "heuristic",
         "heuristic_barrier_gamma": 0.1,  # Scale factor γ
-        "heuristic_barrier_r": 0.95,     # Steplength parameter r
+        "heuristic_barrier_r": 0.95,  # Steplength parameter r
         "verbose_barrier": True,  # Show ξ and complementarity values
     }
 )
@@ -455,10 +455,14 @@ print("Iteration | Barrier Param | Residual")
 print("-" * 40)
 for i, iter_data in enumerate(data["iterations"]):
     if i < 20 or i % 10 == 0:  # Show first 20 iterations, then every 10th
-        print(f"{i:8d} | {iter_data['barrier_param']:12.6e} | {iter_data['residual']:12.6e}")
+        print(
+            f"{i:8d} | {iter_data['barrier_param']:12.6e} | {iter_data['residual']:12.6e}"
+        )
 if len(data["iterations"]) > 20:
     print(f"... (showing every 10th iteration after 20)")
-    print(f"{len(data['iterations'])-1:8d} | {data['iterations'][-1]['barrier_param']:12.6e} | {data['iterations'][-1]['residual']:12.6e}")
+    print(
+        f"{len(data['iterations'])-1:8d} | {data['iterations'][-1]['barrier_param']:12.6e} | {data['iterations'][-1]['residual']:12.6e}"
+    )
 
 # Print results
 print(f"\nOptimization Results:")

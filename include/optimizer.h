@@ -948,7 +948,7 @@ class InteriorPointOptimizer {
   T compute_uniformity_measure(const std::shared_ptr<OptVector<T>> vars) {
     // First compute the average complementarity (y^T w / m)
     T avg_complementarity = compute_complementarity(vars);
-    
+
     if (avg_complementarity <= 0.0) {
       return 1.0;
     }
