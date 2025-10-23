@@ -86,11 +86,11 @@ class OptimizationProblem {
     if (input_jac_dist_ctx) {
       delete input_jac_dist_ctx;
     }
-    if (input_jac_dist) {
-      delete input_jac_dist;
+    if (data_jac_dist) {
+      delete data_jac_dist;
     }
-    if (input_jac_dist_ctx) {
-      delete input_jac_dist_ctx;
+    if (data_jac_dist_ctx) {
+      delete data_jac_dist_ctx;
     }
   }
 
