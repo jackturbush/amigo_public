@@ -34,7 +34,7 @@ b = 3.0
 model = am.Model("quadratic")
 model.add_component("quad", 1, Quadratic())
 
-model.build_module()
+model.build_module(debug=True)
 model.initialize()
 
 # Get the data vector
@@ -63,18 +63,10 @@ opt_data = opt.optimize(
     }
 )
 
-problem = model.get_problem()
+dfdx, of_map, wrt_map = opt.compute_post_opt_derivatives(
+    of="quad.f", wrt=["quad.a", "quad.b"]
+)
 
-out = model.create_output_vector()
-problem.compute_output(x.get_vector(), out.get_vector())
-
-print(model.get_names())
-print(out["quad.f"] - (5 * a**2 - 8 * a * b + 5 * b**2) / 9.0)
-
-out_wrt_input = problem.create_output_jacobian_wrt_input()
-problem.output_jacobian_wrt_input(x.get_vector(), out_wrt_input)
-print(am.tocsr(out_wrt_input))
-
-out_wrt_data = problem.create_output_jacobian_wrt_data()
-problem.output_jacobian_wrt_data(x.get_vector(), out_wrt_data)
-print(am.tocsr(out_wrt_data))
+# f^{star} = (5 * a**2 - 8 * a * b + 5 * b**2) / 9.0
+print(dfdx[of_map["quad.f"], wrt_map["quad.a"]] - (10 * a - 8 * b) / 9)
+print(dfdx[of_map["quad.f"], wrt_map["quad.b"]] - (10 * b - 8 * a) / 9)

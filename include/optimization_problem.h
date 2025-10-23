@@ -57,17 +57,25 @@ class OptimizationProblem {
     dist_data_numbers = nullptr;
     dist_output_numbers = nullptr;
 
+    // Hessian matrix
     mat = nullptr;
     mat_dist = nullptr;
     mat_dist_ctx = nullptr;
 
+    // Derivative of output wrt inputs
     input_jac = nullptr;
     input_jac_dist = nullptr;
     input_jac_dist_ctx = nullptr;
 
+    // Derivative of the output wrt data
     data_jac = nullptr;
     data_jac_dist = nullptr;
     data_jac_dist_ctx = nullptr;
+
+    // Derivative of the gradient wrt data
+    grad_jac = nullptr;
+    grad_jac_dist = nullptr;
+    grad_jac_dist_ctx = nullptr;
   }
   ~OptimizationProblem() {
     delete data_ctx;
@@ -91,6 +99,12 @@ class OptimizationProblem {
     }
     if (data_jac_dist_ctx) {
       delete data_jac_dist_ctx;
+    }
+    if (grad_jac_dist) {
+      delete grad_jac_dist;
+    }
+    if (grad_jac_dist_ctx) {
+      delete grad_jac_dist_ctx;
     }
   }
 
@@ -705,9 +719,87 @@ class OptimizationProblem {
   }
 
   /**
-   * @brief Compute the Jacobian of the gradient of the Lagrangian wrt
+   * @brief Compute the Jacobian of the gradient of the Lagrangian wrt the input
+   * data
    *
+   * @param x The design variable vector
+   * @param jac The Jacobian of the gradient wrt the data
    */
+  void gradient_jacobian_wrt_data(const std::shared_ptr<Vector<T>> x,
+                                  std::shared_ptr<CSRMat<T>> jac) {
+    var_dist.begin_forward(x, var_ctx);
+    var_dist.end_forward(x, var_ctx);
+
+    jac->zero();
+    for (size_t i = 0; i < components.size(); i++) {
+      components[i]->add_grad_jac_wrt_data(*data_vec, *x, *data_owners, *jac);
+    }
+
+    grad_jac_dist->begin_assembly(jac, grad_jac_dist_ctx);
+    grad_jac_dist->end_assembly(jac, grad_jac_dist_ctx);
+  }
+
+  /**
+   * @brief Create a CSR matrix for the Jacobian of the gradient of the
+   * Lagrangian wrt the data
+   */
+  std::shared_ptr<CSRMat<T>> create_gradient_jacobian_wrt_data() {
+    if (grad_jac) {
+      return grad_jac->duplicate();
+    } else {
+      std::vector<int> intervals(components.size() + 1);
+      intervals[0] = 0;
+      for (size_t i = 0; i < components.size(); i++) {
+        int num_elems, inputs_per_elem;
+        const int* inputs;
+        components[i]->get_layout_data(&num_elems, &inputs_per_elem, &inputs);
+        intervals[i + 1] = intervals[i] + num_elems;
+      }
+
+      auto element_output = [&](int element, int* nrow, int* ncol,
+                                const int** rows, const int** cols) {
+        // upper_bound finds the first index i such that intervals[i] >
+        // element
+        auto it = std::upper_bound(intervals.begin(), intervals.end(), element);
+
+        // Decrement to get the interval where element fits: intervals[idx]
+        // <= element < intervals[idx+1]
+        int idx = static_cast<int>(it - intervals.begin()) - 1;
+
+        int num_elems;
+        const int *data, *inputs;
+        components[idx]->get_layout_data(&num_elems, nrow, &inputs);
+        components[idx]->get_data_layout_data(&num_elems, ncol, &data);
+
+        int elem = element - intervals[idx];
+        *rows = &inputs[(*nrow) * elem];
+        *cols = &data[(*ncol) * elem];
+      };
+
+      int num_variables =
+          var_owners->get_local_size() + var_owners->get_ext_size();
+
+      int num_data =
+          data_owners->get_local_size() + data_owners->get_ext_size();
+
+      // Generate the non-zero pattern
+      int *rowp, *cols;
+      OrderingUtils::create_csr_from_output_data(num_variables, num_data,
+                                                 intervals[components.size()],
+                                                 element_output, &rowp, &cols);
+
+      // Distribute the pattern across matrices
+      grad_jac_dist =
+          new MatrixDistribute(comm, var_owners, data_owners, num_variables,
+                               num_data, rowp, cols, grad_jac);
+      grad_jac_dist_ctx = grad_jac_dist->create_context<T>();
+
+      delete[] rowp;
+      delete[] cols;
+
+      return grad_jac;
+    }
+  }
 
   /**
    * @brief Compute the output as a function of the inputs
@@ -1142,6 +1234,10 @@ class OptimizationProblem {
   std::shared_ptr<CSRMat<T>> data_jac;
   MatrixDistribute* data_jac_dist;
   MatrixDistribute::MatDistributeContext<T>* data_jac_dist_ctx;
+
+  std::shared_ptr<CSRMat<T>> grad_jac;
+  MatrixDistribute* grad_jac_dist;
+  MatrixDistribute::MatDistributeContext<T>* grad_jac_dist_ctx;
 };
 
 }  // namespace amigo

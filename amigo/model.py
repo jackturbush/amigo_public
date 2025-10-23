@@ -695,13 +695,13 @@ class Model:
                     f"Name {comp_name}.{name} is not an input, constraint, output or data name"
                 )
 
-    def get_indices_and_map(self, names: List[str]):
+    def get_indices_and_map(self, names: str | List[str]):
         """
         Given a list of variable names, create a concatenated list of indices and a mapping between
         the names and indices.
 
         Args:
-            names (list(str)): List of strings containing the names names
+            names (list(str)): String or list of strings containing the names
 
         Returns:
             indices (np.ndarray): Concatenated array of the indices
@@ -710,11 +710,19 @@ class Model:
         idx_list = []
         idx_dict = {}
         idx_count = 0
-        for name in names:
-            idx = self.get_indices(name).ravel()
+
+        if isinstance(names, list):
+            for name in names:
+                idx = self.get_indices(name).ravel()
+                idx_list.append(idx)
+                idx_dict[name] = np.arange(idx_count, idx_count + idx.size, dtype=int)
+                idx_count += idx.size
+        else:
+            idx = self.get_indices(names).ravel()
             idx_list.append(idx)
-            idx_dict[name] = np.arange(idx_count, idx_count + idx.size, dtype=int)
+            idx_dict[names] = np.arange(idx_count, idx_count + idx.size, dtype=int)
             idx_count += idx.size
+
         indices = np.concatenate(idx_list)
 
         return indices, idx_dict
@@ -784,6 +792,9 @@ class Model:
 
     def create_output_vector(self):
         return ModelVector(self, self.problem.create_output_vector())
+
+    def create_data_vector(self):
+        return ModelVector(self, self.problem.create_data_vector())
 
     def get_problem(self):
         """Retrieve the optimization problem"""

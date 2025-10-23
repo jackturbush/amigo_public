@@ -353,7 +353,12 @@ PYBIND11_MODULE(amigo, mod) {
       .def("output_jacobian_wrt_input",
            &amigo::OptimizationProblem<double>::output_jacobian_wrt_input)
       .def("output_jacobian_wrt_data",
-           &amigo::OptimizationProblem<double>::output_jacobian_wrt_data);
+           &amigo::OptimizationProblem<double>::output_jacobian_wrt_data)
+      .def("create_gradient_jacobian_wrt_data",
+           &amigo::OptimizationProblem<
+               double>::create_gradient_jacobian_wrt_data)
+      .def("gradient_jacobian_wrt_data",
+           &amigo::OptimizationProblem<double>::gradient_jacobian_wrt_data);
 
   py::class_<amigo::AliasTracker<int>>(mod, "AliasTracker")
       .def(py::init<int>(), py::arg("size"))

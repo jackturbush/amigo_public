@@ -277,16 +277,14 @@ class InteriorPointOptimizer {
     // Set a pointer to the vector
     const Vector<T>& g = *grad;
 
-    T mu_sqrt = barrier_param;  // std::sqrt(barrier_param);
-
     // Initialize the lower and upper bound dual variables
     for (int i = 0; i < num_variables; i++) {
       zl[i] = zu[i] = 0.0;
       if (!std::isinf(lbx[i])) {
-        zl[i] = barrier_param;  //  // barrier_param / (x - lbx[i]);
+        zl[i] = barrier_param;
       }
       if (!std::isinf(ubx[i])) {
-        zu[i] = barrier_param;  // barrier_param / (ubx[i] - x);
+        zu[i] = barrier_param;
       }
     }
 
@@ -299,16 +297,16 @@ class InteriorPointOptimizer {
       su[i] = tu[i] = zsu[i] = ztu[i] = 0.0;
 
       if (!std::isinf(lbc[i])) {
-        sl[i] = mu_sqrt;
-        tl[i] = mu_sqrt;
-        zsl[i] = mu_sqrt;
-        ztl[i] = mu_sqrt;
+        sl[i] = barrier_param;
+        tl[i] = barrier_param;
+        zsl[i] = barrier_param;
+        ztl[i] = barrier_param;
       }
       if (!std::isinf(ubc[i])) {
-        su[i] = mu_sqrt;
-        tu[i] = mu_sqrt;
-        zsu[i] = mu_sqrt;
-        ztu[i] = mu_sqrt;
+        su[i] = barrier_param;
+        tu[i] = barrier_param;
+        zsu[i] = barrier_param;
+        ztu[i] = barrier_param;
       }
     }
   }

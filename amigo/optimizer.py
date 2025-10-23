@@ -777,3 +777,46 @@ class Optimizer:
             z_index_prev = z_index
 
         return opt_data
+
+    def compute_post_opt_derivatives(self, of=None, wrt=None, method="adjoint"):
+        """
+        Compute the post-optimality derivatives of the outputs
+        """
+
+        of_indices, of_map = self.model.get_indices_and_map(of)
+        wrt_indices, wrt_map = self.model.get_indices_and_map(wrt)
+
+        # Get the x/multiplier solution vector from the optimization variables
+        x = self.vars.get_solution()
+
+        out_wrt_input = self.problem.create_output_jacobian_wrt_input()
+        self.problem.output_jacobian_wrt_input(x, out_wrt_input)
+        out_wrt_input = tocsr(out_wrt_input)
+
+        out_wrt_data = self.problem.create_output_jacobian_wrt_data()
+        self.problem.output_jacobian_wrt_data(x, out_wrt_data)
+        out_wrt_data = tocsr(out_wrt_data)
+
+        grad_wrt_data = self.problem.create_gradient_jacobian_wrt_data()
+        self.problem.gradient_jacobian_wrt_data(x, grad_wrt_data)
+        grad_wrt_data = tocsr(grad_wrt_data)
+
+        # Add the diagonal contributions to the Hessian matrix
+        self.optimizer.compute_diagonal(self.vars, self.diag)
+
+        # Factor the KKT system
+        self.solver.factor(x, self.diag)
+
+        dfdx = np.zeros((len(of_indices), len(wrt_indices)))
+        if method == "adjoint":
+            for i in range(len(of_indices)):
+                idx = of_indices[i]
+
+                self.res.get_array()[:] = -out_wrt_input[idx, :].toarray()
+                self.solver.solve(self.res, self.px)
+
+                dRdx = grad_wrt_data.T @ self.px.get_array()
+
+                dfdx[i, :] = out_wrt_data[idx, wrt_indices] + dRdx[wrt_indices]
+
+        return dfdx, of_map, wrt_map

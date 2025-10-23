@@ -230,26 +230,38 @@ class SerialGroupBackend {
                                     const Vector<T>& vec,
                                     const NodeOwners& owners,
                                     CSRMat<T>& jac) const {
-    Data data;
-    Input input, gradient, direction, result;
-    for (int i = 0; i < layout.get_num_elements(); i++) {
-      int index[ncomp], index_global[ncomp];
-      layout.get_indices(i, index);
-      owners.local_to_global(ncomp, index, index_global);
+    if constexpr (Component::ndata > 0 && Component::ncomp > 0) {
+      typename Component::template Data<A2D::ADScalar<T, 1>> data;
+      typename Component::template Input<A2D::ADScalar<T, 1>> input;
+      typename Component::template Input<A2D::ADScalar<T, 1>> gradient;
+      int num_elems = layout.get_num_elements();
 
-      data_layout.get_values(i, data_vec, data);
-      layout.get_values(i, vec, input);
+      for (int i = 0; i < num_elems; i++) {
+        layout.get_values(i, vec, input);
 
-      for (int j = 0; j < Component::ncomp; j++) {
-        direction.zero();
-        gradient.zero();
-        result.zero();
+        T jac_elem[ncomp * ndata];
+        for (int j = 0; j < ndata; j++) {
+          gradient.zero();
+          data_layout.get_values(i, data_vec, data);
+          data[j].deriv[0] = 1.0;
+          Component::gradient(data, input, gradient);
 
-        direction[j] = 1.0;
+          for (int k = 0; k < ncomp; k++) {
+            jac_elem[ndata * k + j] = gradient[k].deriv[0];
+          }
+        }
 
-        Component::hessian(data, input, direction, gradient, result);
+        int input_index[ncomp];
+        layout.get_indices(i, input_index);
 
-        jac.add_row(index[j], Component::ncomp, index_global, result);
+        int data_indices[ndata], data_indices_global[ndata];
+        data_layout.get_indices(i, data_indices);
+        owners.local_to_global(ndata, data_indices, data_indices_global);
+
+        for (int j = 0; j < ncomp; j++) {
+          jac.add_row(input_index[j], Component::ndata, data_indices_global,
+                      &jac_elem[ndata * j]);
+        }
       }
     }
 
