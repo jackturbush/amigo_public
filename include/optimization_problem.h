@@ -829,7 +829,7 @@ class OptimizationProblem {
       delete[] rowp;
       delete[] cols;
 
-      return mat;
+      return input_jac;
     }
   }
 
@@ -893,7 +893,7 @@ class OptimizationProblem {
       delete[] rowp;
       delete[] cols;
 
-      return mat;
+      return data_jac;
     }
   }
 
