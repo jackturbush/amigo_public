@@ -5,6 +5,7 @@
 
 #include <cstdio>
 
+#include "a2dcore.h"
 #include "component_group_base.h"
 #include "optimization_problem.h"
 
@@ -882,15 +883,15 @@ class InteriorPointOptimizer {
   /**
    * @brief Compute the complementarity value for all inequalities
    *
-   * This method computes the average complementarity and optionally the
+   * This method computes the average complementarity and the
    * uniformity measure ξ = min_i [w_i y_i / (y^T w / m)]
    *
    * @param vars The optimization variables
-   * @param uniformity_measure Optional pointer to store the uniformity measure
+   * @param uniformity_measure Pointer to store the uniformity measure
    * @return T The average complementarity value
    */
   T compute_complementarity(const std::shared_ptr<OptVector<T>> vars,
-                           T *uniformity_measure = nullptr) const {
+                           T *uniformity_measure) const {
     // Get the dual values for the bound constraints
     const T *zl, *zu;
     vars->get_bound_duals(&zl, &zu);
@@ -906,7 +907,7 @@ class InteriorPointOptimizer {
     Vector<T> &xlam = *vars->get_solution();
 
     T partial_sum[2] = {0.0, 0.0};
-    T local_min = uniformity_measure ? std::numeric_limits<T>::max() : 0.0;
+    T local_min = std::numeric_limits<T>::max();
 
     for (int i = 0; i < num_variables; i++) {
       // Extract the design variable value
@@ -917,17 +918,13 @@ class InteriorPointOptimizer {
         T comp = (x - lbx[i]) * zl[i];
         partial_sum[0] += comp;
         partial_sum[1] += 1.0;
-        if (uniformity_measure) {
-          local_min = std::min(local_min, comp);
-        }
+        local_min = A2D::min(local_min, comp);
       }
       if (!std::isinf(ubx[i])) {
         T comp = (ubx[i] - x) * zu[i];
         partial_sum[0] += comp;
         partial_sum[1] += 1.0;
-        if (uniformity_measure) {
-          local_min = std::min(local_min, comp);
-        }
+        local_min = A2D::min(local_min, comp);
       }
     }
 
@@ -937,9 +934,7 @@ class InteriorPointOptimizer {
         T comp_tl = tl[i] * ztl[i];
         partial_sum[0] += comp_sl + comp_tl;
         partial_sum[1] += 2.0;
-        if (uniformity_measure) {
-          local_min = std::min(local_min, std::min(comp_sl, comp_tl));
-        }
+        local_min = A2D::min(local_min, A2D::min(comp_sl, comp_tl));
       }
 
       if (!std::isinf(ubc[i])) {
@@ -947,9 +942,7 @@ class InteriorPointOptimizer {
         T comp_tu = tu[i] * ztu[i];
         partial_sum[0] += comp_su + comp_tu;
         partial_sum[1] += 2.0;
-        if (uniformity_measure) {
-          local_min = std::min(local_min, std::min(comp_su, comp_tu));
-        }
+        local_min = A2D::min(local_min, A2D::min(comp_su, comp_tu));
       }
     }
 
@@ -960,18 +953,16 @@ class InteriorPointOptimizer {
     // Compute average complementarity
     T avg_complementarity = (sum[1] == 0.0) ? 0.0 : sum[0] / sum[1];
 
-    // If uniformity measure is requested, compute it
-    if (uniformity_measure) {
-      T global_min;
-      MPI_Allreduce(&local_min, &global_min, 1, get_mpi_type<T>(), MPI_MIN,
-                    comm);
+    // Compute the uniformity measure
+    T global_min;
+    MPI_Allreduce(&local_min, &global_min, 1, get_mpi_type<T>(), MPI_MIN,
+                  comm);
 
-      if (avg_complementarity <= 0.0) {
-        *uniformity_measure = 1.0;
-      } else {
-        T uniformity = global_min / avg_complementarity;
-        *uniformity_measure = std::max(0.0, std::min(1.0, uniformity));
-      }
+    if (avg_complementarity <= 0.0) {
+      *uniformity_measure = 1.0;
+    } else {
+      T uniformity = global_min / avg_complementarity;
+      *uniformity_measure = A2D::max(0.0, A2D::min(1.0, uniformity));
     }
 
     return avg_complementarity;
