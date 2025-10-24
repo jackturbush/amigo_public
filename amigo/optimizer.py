@@ -778,13 +778,24 @@ class Optimizer:
 
         return opt_data
 
-    def compute_post_opt_derivatives(self, of=None, wrt=None, method="adjoint"):
+    def compute_output(self):
+        output = self.model.create_output_vector()
+
+        x = self.vars.get_solution()
+        self.problem.compute_output(x, output.get_vector())
+
+        return output
+
+    def compute_post_opt_derivatives(self, of=[], wrt=[], method="adjoint"):
         """
         Compute the post-optimality derivatives of the outputs
         """
 
         of_indices, of_map = self.model.get_indices_and_map(of)
         wrt_indices, wrt_map = self.model.get_indices_and_map(wrt)
+
+        # Allocate space for the derivative
+        dfdx = np.zeros((len(of_indices), len(wrt_indices)))
 
         # Get the x/multiplier solution vector from the optimization variables
         x = self.vars.get_solution()
@@ -807,7 +818,6 @@ class Optimizer:
         # Factor the KKT system
         self.solver.factor(x, self.diag)
 
-        dfdx = np.zeros((len(of_indices), len(wrt_indices)))
         if method == "adjoint":
             for i in range(len(of_indices)):
                 idx = of_indices[i]
@@ -815,8 +825,20 @@ class Optimizer:
                 self.res.get_array()[:] = -out_wrt_input[idx, :].toarray()
                 self.solver.solve(self.res, self.px)
 
-                dRdx = grad_wrt_data.T @ self.px.get_array()
+                adjx = grad_wrt_data.T @ self.px.get_array()
 
-                dfdx[i, :] = out_wrt_data[idx, wrt_indices] + dRdx[wrt_indices]
+                dfdx[i, :] = out_wrt_data[idx, wrt_indices] + adjx[wrt_indices]
+        elif method == "direct":
+            grad_wrt_data = grad_wrt_data.tocsc()
+
+            for i in range(len(wrt_indices)):
+                idx = wrt_indices[i]
+
+                self.res.get_array()[:] = -grad_wrt_data[:, idx].toarray().flatten()
+                self.solver.solve(self.res, self.px)
+
+                dirx = out_wrt_input @ self.px.get_array()
+
+                dfdx[:, i] = out_wrt_data[of_indices, idx] + dirx[of_indices]
 
         return dfdx, of_map, wrt_map

@@ -497,7 +497,7 @@ class Model:
                     raise ValueError(
                         f"Incompatible link {a_expr} {a_indices.shape} and {b_expr} {b_indices.shape}"
                     )
-            elif (not is_var) and (not is_data):
+            elif a_type != b_type:
                 raise ValueError(
                     f"Cannot link {vtype} for {a_expr} {a_type} and {b_expr} {b_type}"
                 )
