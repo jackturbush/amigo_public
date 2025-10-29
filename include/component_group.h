@@ -481,15 +481,17 @@ class OmpGroupBackend {
                       const IndexLayout<ncomp>& layout,
                       const Vector<T>& data_vec, const Vector<T>& vec) const {
     T value = 0.0;
-    int num_elems = layout.get_num_elements();
+    if constexpr (!Component::is_compute_empty) {
+      int num_elems = layout.get_num_elements();
 
 #pragma omp parallel for reduction(+ : value)
-    for (int i = 0; i < num_elems; i++) {
-      Data data;
-      Input input;
-      data_layout.get_values(i, data_vec, data);
-      layout.get_values(i, vec, input);
-      value += Component::lagrange(data, input);
+      for (int i = 0; i < num_elems; i++) {
+        Data data;
+        Input input;
+        data_layout.get_values(i, data_vec, data);
+        layout.get_values(i, vec, input);
+        value += Component::lagrange(data, input);
+      }
     }
 
     if constexpr (sizeof...(Remain) > 0) {
@@ -512,20 +514,22 @@ class OmpGroupBackend {
                            const IndexLayout<ncomp>& layout,
                            const Vector<T>& data_vec, const Vector<T>& vec,
                            Vector<T>& res) const {
-    int end = 0;
-    for (int j = 0; j < num_colors; j++) {
-      int start = end;
-      end = start + elem_per_color[j];
+    if constexpr (!Component::is_compute_empty) {
+      int end = 0;
+      for (int j = 0; j < num_colors; j++) {
+        int start = end;
+        end = start + elem_per_color[j];
 #pragma omp parallel for
-      for (int elem = start; elem < end; elem++) {
-        Data data;
-        Input input, gradient;
+        for (int elem = start; elem < end; elem++) {
+          Data data;
+          Input input, gradient;
 
-        data_layout.get_values(elem, data_vec, data);
-        gradient.zero();
-        layout.get_values(elem, vec, input);
-        Component::gradient(data, input, gradient);
-        layout.add_values(elem, gradient, res);
+          data_layout.get_values(elem, data_vec, data);
+          gradient.zero();
+          layout.get_values(elem, vec, input);
+          Component::gradient(data, input, gradient);
+          layout.add_values(elem, gradient, res);
+        }
       }
     }
 
@@ -549,22 +553,24 @@ class OmpGroupBackend {
                                   const Vector<T>& data_vec,
                                   const Vector<T>& vec, const Vector<T>& dir,
                                   Vector<T>& res) const {
-    int end = 0;
-    for (int j = 0; j < num_colors; j++) {
-      int start = end;
-      end = start + elem_per_color[j];
+    if constexpr (!Component::is_compute_empty) {
+      int end = 0;
+      for (int j = 0; j < num_colors; j++) {
+        int start = end;
+        end = start + elem_per_color[j];
 #pragma omp parallel for
-      for (int elem = start; elem < end; elem++) {
-        Data data;
-        Input input, gradient, direction, result;
+        for (int elem = start; elem < end; elem++) {
+          Data data;
+          Input input, gradient, direction, result;
 
-        data_layout.get_values(elem, data_vec, data);
-        gradient.zero();
-        result.zero();
-        layout.get_values(elem, vec, input);
-        layout.get_values(elem, dir, direction);
-        Component::hessian(data, input, direction, gradient, result);
-        layout.add_values(elem, result, res);
+          data_layout.get_values(elem, data_vec, data);
+          gradient.zero();
+          result.zero();
+          layout.get_values(elem, vec, input);
+          layout.get_values(elem, dir, direction);
+          Component::hessian(data, input, direction, gradient, result);
+          layout.add_values(elem, result, res);
+        }
       }
     }
 
@@ -587,31 +593,33 @@ class OmpGroupBackend {
                           const IndexLayout<ncomp>& layout,
                           const Vector<T>& data_vec, const Vector<T>& vec,
                           const NodeOwners& owners, CSRMat<T>& jac) const {
-    int end = 0;
-    for (int j = 0; j < num_colors; j++) {
-      int start = end;
-      end = start + elem_per_color[j];
+    if constexpr (!Component::is_compute_empty) {
+      int end = 0;
+      for (int j = 0; j < num_colors; j++) {
+        int start = end;
+        end = start + elem_per_color[j];
 #pragma omp parallel for
-      for (int elem = start; elem < end; elem++) {
-        Data data;
-        Input input, gradient, direction, result;
-        int index[ncomp], index_global[ncomp];
-        layout.get_indices(elem, index);
-        owners.local_to_global(ncomp, index, index_global);
+        for (int elem = start; elem < end; elem++) {
+          Data data;
+          Input input, gradient, direction, result;
+          int index[ncomp], index_global[ncomp];
+          layout.get_indices(elem, index);
+          owners.local_to_global(ncomp, index, index_global);
 
-        data_layout.get_values(elem, data_vec, data);
-        layout.get_values(elem, vec, input);
+          data_layout.get_values(elem, data_vec, data);
+          layout.get_values(elem, vec, input);
 
-        for (int k = 0; k < Component::ncomp; k++) {
-          direction.zero();
-          gradient.zero();
-          result.zero();
+          for (int k = 0; k < Component::ncomp; k++) {
+            direction.zero();
+            gradient.zero();
+            result.zero();
 
-          direction[k] = 1.0;
+            direction[k] = 1.0;
 
-          Component::hessian(data, input, direction, gradient, result);
+            Component::hessian(data, input, direction, gradient, result);
 
-          jac.add_row(index[k], Component::ncomp, index_global, result);
+            jac.add_row(index[k], Component::ncomp, index_global, result);
+          }
         }
       }
     }
@@ -619,6 +627,115 @@ class OmpGroupBackend {
     if constexpr (sizeof...(Remain) > 0) {
       add_hessian_kernel<Remain...>(data_layout, layout, data_vec, vec, owners,
                                     jac);
+    }
+  }
+
+  void add_grad_jac_product_wrt_data_kernel(
+      const IndexLayout<ndata>& data_layout, const IndexLayout<ncomp>& layout,
+      const Vector<T>& data_vec, const Vector<T>& vec, const Vector<T>& dir,
+      Vector<T>& res) const {
+    add_grad_jac_product_wrt_data_kernel<Components...>(
+        data_layout, layout, data_vec, vec, dir, res);
+  }
+
+  template <class Component, class... Remain>
+  void add_grad_jac_product_wrt_data_kernel(
+      const IndexLayout<ndata>& data_layout, const IndexLayout<ncomp>& layout,
+      const Vector<T>& data_vec, const Vector<T>& vec, const Vector<T>& dir,
+      Vector<T>& res) const {
+    if constexpr (!Component::is_compute_empty) {
+    }
+
+    if constexpr (sizeof...(Remain) > 0) {
+      add_grad_jac_product_wrt_data_kernel<Remain...>(data_layout, layout,
+                                                      data_vec, vec, dir, res);
+    }
+  }
+
+  void add_grad_jac_tproduct_wrt_data_kernel(
+      const IndexLayout<ndata>& data_layout, const IndexLayout<ncomp>& layout,
+      const Vector<T>& data_vec, const Vector<T>& vec, const Vector<T>& dir,
+      Vector<T>& res) const {
+    add_grad_jac_tproduct_wrt_data_kernel<Components...>(
+        data_layout, layout, data_vec, vec, dir, res);
+  }
+
+  template <class Component, class... Remain>
+  void add_grad_jac_tproduct_wrt_data_kernel(
+      const IndexLayout<ndata>& data_layout, const IndexLayout<ncomp>& layout,
+      const Vector<T>& data_vec, const Vector<T>& vec, const Vector<T>& dir,
+      Vector<T>& res) const {
+    if constexpr (!Component::is_compute_empty) {
+    }
+
+    if constexpr (sizeof...(Remain) > 0) {
+      add_grad_jac_tproduct_wrt_data_kernel<Remain...>(data_layout, layout,
+                                                       data_vec, vec, dir, res);
+    }
+  }
+
+  void add_grad_jac_wrt_data_kernel(const IndexLayout<ndata>& data_layout,
+                                    const IndexLayout<ncomp>& layout,
+                                    const Vector<T>& data_vec,
+                                    const Vector<T>& vec,
+                                    const NodeOwners& owners,
+                                    CSRMat<T>& jac) const {
+    add_grad_jac_wrt_data_kernel<Components...>(data_layout, layout, data_vec,
+                                                vec, owners, jac);
+  }
+
+  template <class Component, class... Remain>
+  void add_grad_jac_wrt_data_kernel(const IndexLayout<ndata>& data_layout,
+                                    const IndexLayout<ncomp>& layout,
+                                    const Vector<T>& data_vec,
+                                    const Vector<T>& vec,
+                                    const NodeOwners& owners,
+                                    CSRMat<T>& jac) const {
+    if constexpr (!Component::is_compute_empty && Component::ndata > 0 &&
+                  Component::ncomp > 0) {
+      int end = 0;
+      for (int j = 0; j < num_colors; j++) {
+        int start = end;
+        end = start + elem_per_color[j];
+#pragma omp parallel for
+        for (int elem = start; elem < end; elem++) {
+          typename Component::template Data<A2D::ADScalar<T, 1>> data;
+          typename Component::template Input<A2D::ADScalar<T, 1>> input;
+          typename Component::template Input<A2D::ADScalar<T, 1>> gradient;
+
+          layout.get_values(elem, vec, input);
+
+          T jac_elem[ncomp * ndata];
+          for (int i = 0; i < ndata; i++) {
+            gradient.zero();
+            data_layout.get_values(elem, data_vec, data);
+            data[i].deriv[0] = 1.0;
+            Component::gradient(data, input, gradient);
+
+            for (int k = 0; k < ncomp; k++) {
+              jac_elem[ndata * k + i] = gradient[k].deriv[0];
+            }
+          }
+
+          int input_index[ncomp];
+          layout.get_indices(elem, input_index);
+
+          int data_indices[ndata], data_indices_global[ndata];
+          data_layout.get_indices(elem, data_indices);
+          owners.local_to_global(Component::ndata, data_indices,
+                                 data_indices_global);
+
+          for (int i = 0; i < ncomp; i++) {
+            jac.add_row(input_index[i], Component::ndata, data_indices_global,
+                        &jac_elem[ndata * i]);
+          }
+        }
+      }
+    }
+
+    if constexpr (sizeof...(Remain) > 0) {
+      add_grad_jac_wrt_data_kernel<Remain...>(data_layout, layout, data_vec,
+                                              vec, owners, jac);
     }
   }
 
