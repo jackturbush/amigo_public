@@ -14,43 +14,78 @@ namespace amigo {
 template <typename T>
 class ExternalComponentEvaluation {
  public:
-  ExternalComponentEvaluation(int ncon, const int cons[], int nvars,
-                              const int vars[], const int rowp[],
-                              const int cols[])
+  ExternalComponentEvaluation(int nvars, int ncon, const int jac_rowp[],
+                              const int jac_cols[],
+                              const int hess_rowp[] = nullptr,
+                              const int hess_cols[] = nullptr)
       : ncon(ncon), nvars(nvars) {
-    con_idx = std::make_shared<Vector<int>>(ncon);
-    con_idx->copy(cons);
-    var_idx = std::make_shared<Vector<int>>(nvars);
-    var_idx->copy(vars);
+    x = std::make_shared<Vector<T>>(nvars + ncon);
 
+    // Objective and constraints
+    fobj = T(0.0);
     constraints = std::make_shared<Vector<T>>(ncon);
 
-    int nnz = cols[ncon];
-    jacobian = CSRMat<T>::create_from_csr_data(ncon, nvars, nnz, rowp, cols);
+    // Gradients and Jacobian
+    fobj_gradient = std::make_shared<Vector<T>>(nvars);
+
+    int jac_nnz = jac_rowp[ncon];
+    jacobian = CSRMat<T>::create_from_csr_data(ncon, nvars, jac_nnz, jac_rowp,
+                                               jac_cols);
+
+    // Hessian contribution
+    hessian = nullptr;
+    if (hess_rowp) {
+      int hess_nnz = hess_rowp[nvars];
+      hessian = CSRMat<T>::create_from_csr_data(nvars, nvars, hess_nnz,
+                                                hess_rowp, hess_cols);
+    }
   }
   virtual ~ExternalComponentEvaluation() {}
 
   int get_num_constraints() const { return ncon; }
   int get_num_variables() const { return nvars; }
-  const std::shared_ptr<Vector<int>> get_constraint_indices() const {
-    return con_idx;
-  }
-  const std::shared_ptr<Vector<int>> get_variable_indices() const {
-    return var_idx;
-  }
-  const std::shared_ptr<Vector<T>> get_constraints() const {
+
+  // Get the design variable vector
+  std::shared_ptr<Vector<T>> get_variables() { return x; }
+  const std::shared_ptr<Vector<T>> get_variables() const { return x; }
+
+  // Grab non-constant pointers
+  T& get_objective() { return fobj; }
+  std::shared_ptr<Vector<T>> get_constraints() { return constraints; }
+  std::shared_ptr<Vector<T>> get_objective_gradient() { return fobj_gradient; }
+  std::shared_ptr<CSRMat<T>> get_jacobian() { return jacobian; }
+  std::shared_ptr<CSRMat<T>> get_hessian() { return hessian; }
+
+  // Grab constant pointers
+  const T& get_objective() const { return fobj; }
+  std::shared_ptr<const Vector<T>> get_constraints() const {
     return constraints;
   }
-  const std::shared_ptr<CSRMat<T>> get_jacobian() const { return jacobian; }
+  std::shared_ptr<const Vector<T>> get_objective_gradient() const {
+    return fobj_gradient;
+  }
+  std::shared_ptr<const CSRMat<T>> get_jacobian() const { return jacobian; }
+  std::shared_ptr<const CSRMat<T>> get_hessian() const { return hessian; }
 
-  virtual void evaluate(const Vector<T>& x) = 0;
+  // Evaluate the objective, constraints and
+  virtual void evaluate() = 0;
 
  protected:
   int ncon, nvars;
-  std::shared_ptr<Vector<int>> con_idx;
-  std::shared_ptr<Vector<int>> var_idx;
+
+  // The design variables
+  std::shared_ptr<Vector<T>> x;
+
+  // The objective and constraint values
+  T fobj;
   std::shared_ptr<Vector<T>> constraints;
+
+  // Gradient and constraint Jacobian
+  std::shared_ptr<Vector<T>> fobj_gradient;
   std::shared_ptr<CSRMat<T>> jacobian;
+
+  // Hessian matrix
+  std::shared_ptr<CSRMat<T>> hessian;
 };
 
 /**
@@ -59,11 +94,18 @@ class ExternalComponentEvaluation {
  * @tparam T Template type for the computation
  */
 template <typename T>
-class ExternalComponent : public ComponentGroupBase<T> {
+class ExternalComponentGroup : public ComponentGroupBase<T> {
  public:
-  ExternalComponent(std::shared_ptr<ExternalComponentEvaluation<T>> extrn)
+  ExternalComponentGroup(int nvars, const int vars[], int ncon,
+                         const int cons[],
+                         std::shared_ptr<ExternalComponentEvaluation<T>> extrn)
       : extrn(extrn) {
-    const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
+    var_indices = std::make_shared<Vector<int>>(nvars);
+    var_indices->copy(vars);
+    con_indices = std::make_shared<Vector<int>>(ncon);
+    con_indices->copy(cons);
+
+    std::shared_ptr<const CSRMat<T>> jacobian = extrn->get_jacobian();
     jacobian_transpose = jacobian->transpose();
   }
 
@@ -83,24 +125,45 @@ class ExternalComponent : public ComponentGroupBase<T> {
    * @param x The design variable values
    */
   void update(const Vector<T>& x) {
-    extrn->evaluate(x);
+    int ncon = extrn->get_num_constraints();
+    int nvars = extrn->get_num_variables();
 
-    const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
-    jacobian_transpose->copy_transpose(jacobian);
+    const int* var_idx = var_indices->get_array();
+    const int* con_idx = con_indices->get_array();
+
+    // Copy over the design variable values and multipliers
+    Vector<T>& xlocal = *extrn->get_variables();
+    for (int i = 0; i < nvars; i++) {
+      xlocal[i] = x[var_idx[i]];
+    }
+    for (int i = 0; i < ncon; i++) {
+      xlocal[nvars + i] = x[con_idx[i]];
+    }
+
+    // Evaluate the objective, constraints, gradient, Jacobian and possibly the
+    // Hessian matrix too, if supplied
+    extrn->evaluate();
+
+    // Retrieve the constraint Jacobian and compute its transpose
+    std::shared_ptr<const CSRMat<T>> jacobian = extrn->get_jacobian();
+    jacobian->copy_transpose(jacobian_transpose);
+
+    xlocal = *extrn->get_variables();
   }
 
   // Compute the Lagrangian
   T lagrangian(const Vector<T>& data, const Vector<T>& x) const {
-    T value(0.0);
-
-    const Vector<int>& con_indices = *extrn->get_constraint_indices();
+    T value = extrn->get_objective();
     const Vector<T>& constraints = *extrn->get_constraints();
+
     int ncon = extrn->get_num_constraints();
+    const int* con_idx = con_indices->get_array();
 
     for (int i = 0; i < ncon; i++) {
-      T lambda = x[con_indices[i]];
+      T lambda = x[con_idx[i]];
       value += lambda * constraints[i];
     }
+
     return value;
   }
 
@@ -114,9 +177,9 @@ class ExternalComponent : public ComponentGroupBase<T> {
   void add_gradient(const Vector<T>& data, const Vector<T>& x,
                     Vector<T>& g) const {
     const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
-    const Vector<int>& con_indices = *extrn->get_constraint_indices();
-    const Vector<int>& var_indices = *extrn->get_variable_indices();
     const Vector<T>& constraints = *extrn->get_constraints();
+    const int* var_idx = var_indices->get_array();
+    const int* con_idx = con_indices->get_array();
 
     int nrows;
     const int *rowp, *cols;
@@ -124,12 +187,12 @@ class ExternalComponent : public ComponentGroupBase<T> {
     jacobian->get_data(&nrows, nullptr, nullptr, &rowp, &cols, &A);
 
     for (int i = 0; i < nrows; i++) {
-      int row = con_indices[i];
+      int row = con_idx[i];
       g[row] += constraints[i];
 
       for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
         int j = cols[jp];
-        int col = var_indices[j];
+        int col = var_idx[j];
 
         T lambda = x[row];
         g[col] += A[jp] * lambda;
@@ -147,26 +210,43 @@ class ExternalComponent : public ComponentGroupBase<T> {
    */
   void add_hessian_product(const Vector<T>& data, const Vector<T>& x,
                            const Vector<T>& p, Vector<T>& h) const {
-    const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
-    const Vector<int>& con_indices = *extrn->get_constraint_indices();
-    const Vector<int>& var_indices = *extrn->get_variable_indices();
+    const int* var_idx = var_indices->get_array();
+    const int* con_idx = con_indices->get_array();
 
+    const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
     int nrows;
     const int *rowp, *cols;
     const T* A;
     jacobian->get_data(&nrows, nullptr, nullptr, &rowp, &cols, &A);
 
     for (int i = 0; i < nrows; i++) {
-      int row = con_indices[i];
+      int row = con_idx[i];
 
       for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
         int j = cols[jp];
-        int col = var_indices[j];
+        int col = var_idx[j];
 
         T px = p[col];
         T plambda = p[row];
         h[col] += A[jp] * plambda;
         h[row] += A[jp] * px;
+      }
+    }
+
+    const std::shared_ptr<CSRMat<T>> hessian = extrn->get_hessian();
+    if (hessian) {
+      hessian->get_data(&nrows, nullptr, nullptr, &rowp, &cols, &A);
+
+      for (int i = 0; i < nrows; i++) {
+        int row = var_idx[i];
+
+        for (int jp = rowp[i]; jp < rowp[i + 1]; jp++) {
+          int j = cols[jp];
+          int col = var_idx[j];
+
+          T px = p[col];
+          h[row] += A[jp] * px;
+        }
       }
     }
   }
@@ -176,56 +256,78 @@ class ExternalComponent : public ComponentGroupBase<T> {
    *
    * @param data (not used, but required for matching the signature)
    * @param x (not used)
-   * @param owners
-   * @param mat
+   * @param owners (not used)
+   * @param mat The terms added to the Hessian matrix
    */
   void add_hessian(const Vector<T>& data, const Vector<T>& x,
                    const NodeOwners& owners, CSRMat<T>& mat) const {
     // Add the contributions to the Hessian matrix...
     const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
-    const Vector<int>& con_indices = *extrn->get_constraint_indices();
-    const Vector<int>& var_indices = *extrn->get_variable_indices();
+    const std::shared_ptr<CSRMat<T>> hessian = extrn->get_hessian();
 
-    mat.add_submatrix(con_indices.get_array(), var_indices.get_array(),
+    mat.add_submatrix(con_indices->get_array(), var_indices->get_array(),
                       jacobian);
-    mat.add_submatrix(var_indices.get_array(), con_indices.get_array(),
+    mat.add_submatrix(var_indices->get_array(), con_indices->get_array(),
                       jacobian_transpose);
+
+    if (hessian) {
+      mat.add_submatrix(var_indices->get_array(), var_indices->get_array(),
+                        hessian);
+    }
   }
 
   /**
    * @brief Get the data that describes the contributions to the sparse
-   * constraints
+   * Hessian matrix from an external component
    *
-   * @param nrows Number of constraints
-   * @param ncols Number of columns
-   * @param rows Row indices
-   * @param columns Column indices
-   * @param rowp Pointer into the rows of each constraint
-   * @param cols Local column indices columns[cols[i]] = column index
+   * @param nvars Number of design variables
+   * @param vars Design variable indices
+   * @param ncon Number of constraints
+   * @param cons Constraint (multiplier) indices
+   * @param jac_rowp Pointer into the rows of each constraint
+   * @param jac_cols Local column indices columns[cols[i]] = column index
+   * @param hess_rowp Pointer into the rows of each constraint
+   * @param hess_cols Local column indices columns[cols[i]] = column index
    */
-  void get_constraint_csr_data(int* nrows, int* ncols, const int* rows[],
-                               const int* columns[], const int* rowp[],
-                               const int* cols[]) const {
+  void get_csr_data(int* nvars, const int* vars[], int* ncon, const int* cons[],
+                    const int* jac_rowp[], const int* jac_cols[],
+                    const int* hess_rowp[], const int* hess_cols[]) const {
     const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
-    const std::shared_ptr<Vector<int>> con_indices =
-        extrn->get_constraint_indices();
-    const std::shared_ptr<Vector<int>> var_indices =
-        extrn->get_variable_indices();
+    const std::shared_ptr<CSRMat<T>> hessian = extrn->get_hessian();
 
-    if (rows) {
-      *rows = con_indices->get_array();
+    if (nvars) {
+      *nvars = extrn->get_num_variables();
     }
-    if (columns) {
-      *columns = var_indices->get_array();
+    if (ncon) {
+      *ncon = extrn->get_num_constraints();
     }
-    jacobian->get_data(nrows, ncols, nullptr, rowp, cols, nullptr);
+
+    if (vars) {
+      *vars = var_indices->get_array();
+    }
+    if (cons) {
+      *cons = con_indices->get_array();
+    }
+    jacobian->get_data(nullptr, nullptr, nullptr, jac_rowp, jac_cols, nullptr);
+
+    if (hessian) {
+      hessian->get_data(nullptr, nullptr, nullptr, hess_rowp, hess_cols,
+                        nullptr);
+    } else {
+      // This object does not define a Hessian matrix
+      if (hess_rowp) {
+        *hess_rowp = nullptr;
+      }
+      if (hess_cols) {
+        *hess_cols = nullptr;
+      }
+    }
   }
 
  private:
   std::shared_ptr<Vector<int>> con_indices;
   std::shared_ptr<Vector<int>> var_indices;
-  std::shared_ptr<Vector<T>> constraints;
-  std::shared_ptr<CSRMat<T>> jacobian;
+
   std::shared_ptr<CSRMat<T>> jacobian_transpose;
   std::shared_ptr<ExternalComponentEvaluation<T>> extrn;
 };

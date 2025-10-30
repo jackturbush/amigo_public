@@ -12,6 +12,7 @@ from .amigo import (
     AMIGO_INCLUDE_PATH,
     A2D_INCLUDE_PATH,
     CSRMat,
+    ExternalComponentGroup,
 )
 from .component import Component
 from scipy.sparse import spmatrix
@@ -257,7 +258,7 @@ class ComponentGroup:
                         offset += 1
         return array
 
-    def create_group(self, module_name: str):
+    def create_group_object(self, module_name: str):
         if not self.comp_obj.is_compute_empty() or not self.comp_obj.is_output_empty():
             data_array = self.get_indices(self.data)
             vec_array = self.get_indices(self.vars)
@@ -277,6 +278,37 @@ class ComponentGroup:
         return None
 
 
+class ExternalComponent:
+    def __init__(self, name, comp_obj, inputs=[], constraints=[]):
+        self.name = name
+        self.comp_obj = comp_obj
+        self.inputs = inputs
+        self.constraints = constraints
+        return
+
+    def get_input_names(self):
+        return self.inputs
+
+    def get_constraint_names(self):
+        return self.constraints
+
+    def create_group_object(self, input_idx, con_idx):
+        nrows, ncols, jac_rowp, jac_cols = self.comp_obj.get_constraint_jacobian_csr()
+
+        if nrows != len(con_idx):
+            raise ValueError(
+                "Number of constraint Jacobian rows inconsistent with the constraint dimensions"
+            )
+        if ncols != len(input_idx):
+            raise ValueError(
+                "Number of constraint Jacobian columns inconsistent with the input dimensions"
+            )
+
+        return ExternalComponentGroup(
+            input_idx, con_idx, jac_rowp, jac_cols, self.comp_obj.evaluate
+        )
+
+
 class ModelVector:
     def __init__(self, model, x):
         self._model = model
@@ -286,7 +318,7 @@ class ModelVector:
         return self._x
 
     def __getitem__(self, expr):
-        if isinstance(expr, str):
+        if isinstance(expr, (str, list)):
             x_array = self._x.get_array()
             return x_array[self._model.get_indices(expr)]
         elif isinstance(expr, (int, np.integer, slice)):
@@ -296,7 +328,7 @@ class ModelVector:
             raise KeyError("Key type {expr} not accepted")
 
     def __setitem__(self, expr, item):
-        if isinstance(expr, str):
+        if isinstance(expr, (str, list)):
             x_array = self._x.get_array()
             x_array[self._model.get_indices(expr)] = item
         elif isinstance(expr, (int, np.integer, slice)):
@@ -316,6 +348,7 @@ class Model:
         """
         self.module_name = module_name
         self.comp = {}
+        self.external_comp = {}
         self.index_pool = GlobalIndexPool()
         self.data_index_pool = GlobalIndexPool()
         self.output_index_pool = GlobalIndexPool()
@@ -370,6 +403,23 @@ class Model:
 
         return
 
+    def add_external_component(self, name: str, comp_obj, inputs=[], constraints=[]):
+        """
+        Add an external component to the model.
+
+        Args:
+            name (str): Name of the external component
+            comp_obj (object): Python object
+            inputs (List of str): List of strings of the input name
+            constraints (List of str): List of strings of the constraint names
+        """
+
+        self.external_comp[name] = ExternalComponent(
+            name, comp_obj, inputs, constraints
+        )
+
+        return
+
     def add_model(self, name: str, model: Self):
         """
         Add an entire model class as a sub-model.
@@ -395,6 +445,23 @@ class Model:
             sub_obj = model.comp[comp_name].comp_obj
 
             self.add_component(sub_name, sub_size, sub_obj)
+
+        # Add all of the sub-model external components
+        for comp_name in model.external_comp:
+            sub_name = name + "." + comp_name
+
+            sub_inputs = []
+            sub_constraints = []
+            sub_group = model.external_comp[comp_name]
+            sub_obj = sub_group.comp_obj
+
+            for iname in enumerate(sub_group.inputs):
+                sub_inputs.append(name + "." + iname)
+
+            for iname in enumerate(sub_group.constraints):
+                sub_constraints.append(name + "." + iname)
+
+            self.add_external_component(sub_name, sub_obj, sub_inputs, sub_constraints)
 
         # Add all of the sub-model links (if any exist)
         for (
@@ -756,9 +823,18 @@ class Model:
             comm_size = comm.size
 
         objs = []
-        # outs = []
-        for name, comp in self.comp.items():
-            obj = comp.create_group(self.module_name)
+
+        # Add the regular component groups
+        for _, comp in self.comp.items():
+            obj = comp.create_group_object(self.module_name)
+            if obj is not None:
+                objs.append(obj)
+
+        # Add the external components
+        for _, comp in self.external_comp.items():
+            input_idx = self.get_indices(comp.inputs)
+            con_idx = self.get_indices(comp.constraints)
+            obj = comp.create_group_object(input_idx, con_idx)
             if obj is not None:
                 objs.append(obj)
 

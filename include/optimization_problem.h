@@ -605,29 +605,29 @@ class OptimizationProblem {
       int num_csr_components = 0;
       std::vector<int> csr_components(components.size());
       for (size_t i = 0; i < components.size(); i++) {
-        int nrows;
-        components[i]->get_constraint_csr_data(&nrows, nullptr, nullptr,
-                                               nullptr, nullptr, nullptr);
-        if (nrows > 0) {
-          csr_components.push_back(i);
+        int nvars, ncon;
+        components[i]->get_csr_data(&nvars, nullptr, &ncon, nullptr, nullptr,
+                                    nullptr, nullptr, nullptr);
+        if (nvars > 0 || ncon > 0) {
+          csr_components[num_csr_components] = i;
           num_csr_components++;
         }
       }
 
       if (num_csr_components > 0) {
         auto get_csr_component =
-            [&](int index, int* local_nrows, int* local_ncols,
-                const int* local_rows[], const int* local_columns[],
-                const int* local_rowp[], const int* local_cols[]) {
+            [&](int index, int* nvars, const int* vars[], int* ncon,
+                const int* cons[], const int* jac_rowp[], const int* jac_cols[],
+                const int* hess_rowp[], const int* hess_cols[]) {
               int comp_index = csr_components[index];
-              components[comp_index]->get_constraint_csr_data(
-                  local_nrows, local_ncols, local_rows, local_columns,
-                  local_rowp, local_cols);
+              components[comp_index]->get_csr_data(nvars, vars, ncon, cons,
+                                                   jac_rowp, jac_cols,
+                                                   hess_rowp, hess_cols);
               return;
             };
 
         int *new_rowp, *new_cols;
-        OrderingUtils::add_constraint_csr_pattern(
+        OrderingUtils::add_extern_csr_pattern(
             num_variables, num_variables, rowp, cols, num_csr_components,
             get_csr_component, &new_rowp, &new_cols);
 
@@ -662,7 +662,7 @@ class OptimizationProblem {
     var_dist.end_forward(x, var_ctx);
 
     for (size_t i = 0; i < components.size(); i++) {
-      components[i]->update(*data_vec, *x);
+      components[i]->update(*x);
     }
   }
 
