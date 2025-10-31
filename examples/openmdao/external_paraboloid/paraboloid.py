@@ -34,7 +34,7 @@ prob.setup()
 prob.run_model()
 
 # Create the amigo model
-model = am.Model("parabaloid")
+model = am.Model("paraboloid")
 model.add_component("src", 1, Constraint())
 
 inputs = ["src.x", "src.y"]

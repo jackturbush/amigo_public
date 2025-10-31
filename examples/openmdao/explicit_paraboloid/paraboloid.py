@@ -48,7 +48,7 @@ class Quadratic(am.Component):
         self.outputs["f"] = x1**2 + x2**2
 
 
-model = am.Model("parabaloid")
+model = am.Model("paraboloid")
 model.add_component("quad", 1, Quadratic())
 
 model.build_module(debug=True)
