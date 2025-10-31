@@ -1,7 +1,6 @@
 import numpy as np
 import openmdao.api as om
 import amigo as am
-import json
 
 
 class Constraint(am.Component):
