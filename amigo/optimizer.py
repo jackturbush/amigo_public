@@ -642,7 +642,12 @@ class Optimizer:
         self._zero_multipliers(x)
 
         # Compute the gradient
-        self.problem.gradient(x, self.grad)
+        if self.distribute:
+            self.mpi_problem.update(x)
+            self.mpi_problem.gradient(x, self.grad)
+        else:
+            self.problem.update(x)
+            self.problem.gradient(x, self.grad)
 
         # Set the initial point and slack variable
         self.optimizer.initialize_multipliers_and_slacks(
@@ -663,8 +668,10 @@ class Optimizer:
 
         # Compute the gradient
         if self.distribute:
+            self.mpi_problem.update(x)
             self.mpi_problem.gradient(x, self.grad)
         else:
+            self.problem.update(x)
             self.problem.gradient(x, self.grad)
 
         line_iters = 0
@@ -817,8 +824,10 @@ class Optimizer:
                 # Compute the gradient at the new point
                 xt = self.temp.get_solution()
                 if self.distribute:
+                    self.mpi_problem.update(xt)
                     self.mpi_problem.gradient(xt, self.grad)
                 else:
+                    self.problem.update(xt)
                     self.problem.gradient(xt, self.grad)
 
                 # Compute the residual at the perturbed point

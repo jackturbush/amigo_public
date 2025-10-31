@@ -750,10 +750,10 @@ class OrderingUtils {
    * @param _new_cols Array of column indices
    */
   template <class Functor>
-  static void add_constraint_csr_pattern(int nrows, int ncols, const int rowp[],
-                                         const int cols[], int num_comps,
-                                         const Functor& get_component_csr,
-                                         int** _new_rowp, int** _new_cols) {
+  static void add_extern_csr_pattern(int nrows, int ncols, const int rowp[],
+                                     const int cols[], int num_comps,
+                                     const Functor& get_component_csr,
+                                     int** _new_rowp, int** _new_cols) {
     int* new_rowp = new int[nrows + 1];
 
     new_rowp[nrows] = 0;
@@ -762,24 +762,33 @@ class OrderingUtils {
     }
 
     for (int comp = 0; comp < num_comps; comp++) {
-      int local_nrows, local_ncols;
-      const int *local_rows, *local_columns;
-      const int *local_rowp, *local_cols;
-      get_component_csr(comp, &local_nrows, &local_ncols, &local_rows,
-                        &local_columns, &local_rowp, &local_cols);
+      int nvars, ncons;
+      const int *vars, *cons;
+      const int *jac_rowp, *jac_cols;
+      const int *hess_rowp, *hess_cols;
+      get_component_csr(comp, &nvars, &vars, &ncons, &cons, &jac_rowp,
+                        &jac_cols, &hess_rowp, &hess_cols);
 
       // Add the row
-      for (int i = 0; i < local_nrows; i++) {
-        int row = local_rows[i];
-        new_rowp[row] += local_rowp[i + 1] - local_rowp[i];
+      for (int i = 0; i < ncons; i++) {
+        int row = cons[i];
+        new_rowp[row] += jac_rowp[i + 1] - jac_rowp[i];
       }
 
       // Add the result from the transpose
-      for (int i = 0; i < local_nrows; i++) {
-        for (int jp = local_rowp[i]; jp < local_rowp[i + 1]; jp++) {
-          int j = local_cols[jp];
-          int col = local_columns[j];
+      for (int i = 0; i < nvars; i++) {
+        for (int jp = jac_rowp[i]; jp < jac_rowp[i + 1]; jp++) {
+          int j = jac_cols[jp];
+          int col = vars[j];
           new_rowp[col]++;
+        }
+      }
+
+      // Add the hessian contributions (if defined)
+      if (hess_rowp) {
+        for (int i = 0; i < nvars; i++) {
+          int row = vars[i];
+          new_rowp[row] += hess_rowp[i + 1] - hess_rowp[i];
         }
       }
     }
@@ -806,18 +815,19 @@ class OrderingUtils {
 
     // Add the non-zeros from the new pattern
     for (int comp = 0; comp < num_comps; comp++) {
-      int local_nrows, local_ncols;
-      const int *local_rows, *local_columns;
-      const int *local_rowp, *local_cols;
-      get_component_csr(comp, &local_nrows, &local_ncols, &local_rows,
-                        &local_columns, &local_rowp, &local_cols);
+      int nvars, ncons;
+      const int *vars, *cons;
+      const int *jac_rowp, *jac_cols;
+      const int *hess_rowp, *hess_cols;
+      get_component_csr(comp, &nvars, &vars, &ncons, &cons, &jac_rowp,
+                        &jac_cols, &hess_rowp, &hess_cols);
 
       // Add the new rows
-      for (int i = 0; i < local_nrows; i++) {
-        int row = local_rows[i];
-        for (int jp = local_rowp[i]; jp < local_rowp[i + 1]; jp++) {
-          int j = local_cols[jp];
-          int col = local_columns[j];
+      for (int i = 0; i < ncons; i++) {
+        int row = cons[i];
+        for (int jp = jac_rowp[i]; jp < jac_rowp[i + 1]; jp++) {
+          int j = jac_cols[jp];
+          int col = vars[j];
 
           // Add the contribution from the Jacobian
           new_cols[new_rowp[row]] = col;
@@ -826,6 +836,20 @@ class OrderingUtils {
           // Add the contribution from the transpose Jacobian
           new_cols[new_rowp[col]] = row;
           new_rowp[col]++;
+        }
+      }
+
+      // Add the result from the Hessian
+      if (hess_rowp) {
+        for (int i = 0; i < nvars; i++) {
+          int row = vars[i];
+          for (int jp = hess_rowp[i]; jp < hess_rowp[i + 1]; jp++) {
+            int j = hess_cols[jp];
+            int col = vars[j];
+
+            new_cols[new_rowp[row]] = col;
+            new_rowp[row]++;
+          }
         }
       }
     }

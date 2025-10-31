@@ -5,10 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "amigo"
 version = "0.0.1"
-description = "A friendly library for multidisciplinary analysis and optimization on GPUs."
+description = "A friendly library for multidisciplinary analysis and optimization."
 readme = "README.md"
 authors = [{name = "Graeme J. Kennedy", email = "graeme.kennedy@aerospace.gatech.edu"}]
 dependencies = ["black>=25.1.0", "pre-commit>=3.5.0", "numpy", "scipy", "pybind11", "matplotlib", "niceplots", "setuptools", "mpi4py"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[project.optional-dependencies]
+openmdao = [
+  "openmdao>=3.29",  # choose a sensible, tested range
+]
+
+# (Optional) mypy users:
+[tool.mypy]
+ignore_missing_imports = true  # or per-module overrides

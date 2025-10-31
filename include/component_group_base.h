@@ -58,27 +58,33 @@ class ComponentGroupBase {
                                        CSRMat<T>& jac) const {}
 
   // Get the information about the non-zero pattern
-  virtual void get_constraint_csr_data(int* nrows, int* ncols,
-                                       const int* rows[], const int* cols[],
-                                       const int* rowp[],
-                                       const int* colidx[]) const {
-    if (nrows) {
-      *nrows = 0;
+  virtual void get_csr_data(int* nvars, const int* vars[], int* ncon,
+                            const int* cons[], const int* jac_rowp[],
+                            const int* jac_cols[], const int* hess_rowp[],
+                            const int* hess_cols[]) const {
+    if (nvars) {
+      *nvars = 0;
     }
-    if (ncols) {
-      *ncols = 0;
+    if (vars) {
+      *vars = nullptr;
     }
-    if (rows) {
-      *rows = nullptr;
+    if (ncon) {
+      *ncon = 0;
     }
-    if (cols) {
-      *cols = nullptr;
+    if (cons) {
+      *cons = nullptr;
     }
-    if (rowp) {
-      *rowp = nullptr;
+    if (jac_rowp) {
+      *jac_rowp = nullptr;
     }
-    if (colidx) {
-      *colidx = nullptr;
+    if (jac_cols) {
+      *jac_cols = nullptr;
+    }
+    if (hess_rowp) {
+      *hess_rowp = nullptr;
+    }
+    if (hess_cols) {
+      *hess_cols = nullptr;
     }
   }
   virtual void get_data_layout_data(int* num_elements, int* nodes_per_elem,

@@ -332,14 +332,11 @@ class CSRMat {
       }
     }
 
-    // Set the offsets into the new rows
-    count = 0;
-    for (int i = 0; i < new_nrows; i++) {
-      int temp = new_rowp[i];
-      new_rowp[i] = count;
-      count += temp;
+    // Set the offsets back
+    for (int i = new_nrows; i > 0; i--) {
+      new_rowp[i] = new_rowp[i - 1];
     }
-    new_rowp[new_nrows] = count;
+    new_rowp[0] = 0;
 
     return std::make_shared<CSRMat<T>>(new_nrows, new_ncols, new_nnz, new_rowp,
                                        new_cols, row_owners, col_owners,
