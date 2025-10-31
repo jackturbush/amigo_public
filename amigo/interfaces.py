@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
-from .model import Model
+from .model import Model, ModelVector
+from .optimizer import Optimizer
 import numpy as np
 
 
@@ -23,7 +24,7 @@ def _import_openmdao():
 def ExternalOpenMDAOComponent(om_problem, am_model):
     om = _import_openmdao()
 
-    class ExtOMComponent:
+    class _ExternalOpenMDAOComponent:
         def __init__(self, om_problem: om.Problem, am_model: Model):
 
             self.om_problem = om_problem
@@ -100,34 +101,81 @@ def ExternalOpenMDAOComponent(om_problem, am_model):
 
             return fobj
 
-    return ExtOMComponent(om_problem, am_model)
+    return _ExternalOpenMDAOComponent(om_problem, am_model)
 
 
-# def PostOptComponent(model, mapping):
-#     om = _import_openmdao()
+def ExplicitOpenMDAOPostOptComponent(**kwargs):
+    om = _import_openmdao()
 
-#     class PostOptExplicit(om.ExplicitComponent):
-#         def initialize(self):
-#             super().__init__(core_model)
-#             self.options.declare("mapping", default=mapping, types=dict)
+    class _ExplicitOpenMDAOPostOptComponent(om.ExplicitComponent):
+        def initialize(self):
+            self.options.declare("data", types=list)
+            self.options.declare("output", types=list)
+            self.options.declare("model", types=Model)
+            self.options.declare("x", types=ModelVector)
+            self.options.declare("lower", types=ModelVector)
+            self.options.declare("upper", types=ModelVector)
+            self.options.declare("opt_options", default={}, types=dict)
 
-#         def setup(self):
-#             m = self.options["mapping"]
-#             # register OpenMDAO inputs/outputs from mapping
-#             for name, spec in m.get("inputs", {}).items():
-#                 self.add_input(name, **spec)
-#             for name, spec in m.get("outputs", {}).items():
-#                 self.add_output(name, **spec)
+        def _map_names(self, names):
+            mapping = {}
+            for name in names:
+                sanitized_name = name.replace(".", "_")
+                mapping[name] = sanitized_name
 
-#         def compute(self, inputs, outputs):
-#             # adapt inputs -> core, run, adapt outputs
-#             x = {k: inputs[k] for k in self.options["mapping"].get("inputs", {})}
-#             y = self.core.run(x)  # your pure function/class method
-#             for k in self.options["mapping"].get("outputs", {}):
-#                 outputs[k] = y[k]
+            return mapping
 
-#         def compute_partials(self, inputs, partials):
-#             if hasattr(self.core, "jacobian"):
-#                 J = self.core.jacobian(inputs)  # dict-of-dicts or similar
-#                 for (of, wrt), val in J.items():
-#                     partials[of, wrt] = val
+        def setup(self):
+            self.data = self.options["data"]
+            self.output = self.options["output"]
+            self.model = self.options["model"]
+            self.x = self.options["x"]
+            self.lower = self.options["lower"]
+            self.upper = self.options["upper"]
+            self.opt_options = self.options["opt_options"]
+
+            self.opt = Optimizer(self.model, self.x, lower=self.lower, upper=self.upper)
+
+            self.data_mapping = self._map_names(self.data)
+            self.out_mapping = self._map_names(self.output)
+
+            for name in self.data:
+                meta = self.model.get_meta(name)
+                open_name = self.data_mapping[name]
+                self.add_input(open_name, val=meta["value"])
+
+            for name in self.output:
+                open_name = self.out_mapping[name]
+                self.add_output(open_name)  # , val=meta["value"])
+
+            self.declare_partials(of="*", wrt="*")
+
+            return
+
+        def compute(self, inputs, outputs):
+            data = self.model.get_data_vector()
+            for name in self.data:
+                open_name = self.data_mapping[name]
+                data[name] = inputs[open_name]
+
+            self.opt.optimize(self.opt_options)
+
+            out = self.opt.compute_output()
+            for name in self.output:
+                open_name = self.out_mapping[name]
+                outputs[open_name] = out[name]
+
+            self.dfdx, self.of_map, self.wrt_map = (
+                self.opt.compute_post_opt_derivatives(of=self.output, wrt=self.data)
+            )
+
+        def compute_partials(self, inputs, partials):
+            for of in self.of_map:
+                open_of = self.out_mapping[of]
+                for wrt in self.wrt_map:
+                    open_wrt = self.data_mapping[wrt]
+                    partials[open_of, open_wrt] = self.dfdx[
+                        self.of_map[of], self.wrt_map[wrt]
+                    ]
+
+    return _ExplicitOpenMDAOPostOptComponent(**kwargs)

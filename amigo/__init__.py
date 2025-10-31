@@ -11,7 +11,7 @@ from .model import Model
 from .optimizer import *
 from .utils import tocsr, topetsc, BSplineInterpolant
 from .unary_operations import *
-from .interfaces import ExternalOpenMDAOComponent
+from .interfaces import ExternalOpenMDAOComponent, ExplicitOpenMDAOPostOptComponent
 
 
 def get_include():
