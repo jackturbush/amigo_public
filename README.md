@@ -2,11 +2,13 @@
 
 Amigo is a python library that is designed for solving multidisciplinary analysis and optimization problems with high-performance computing resources through automatically generated c++ wrappers. 
 
-All application code is written in python and automatically compiled to c++. Automatic differentiation is used throughout to evaluate first and second derivatives using A2D. Different backends can be used: Serial, OpenMP and CUDA for Nvidia GPUs. The user written python code is independent of the backend used.
+All application code is written in python and automatically compiled to c++. Automatic differentiation is used throughout to evaluate first and second derivatives using A2D. Different backend implementations are used depending on the computational environment: Serial, OpenMP and MPI are supported (a CUDA implementation for Nvidia GPUs is under development). The user python code is independent of the target backend.
+
+Integration with other MDO libraries is key for flexibility. Amigo contains interfaces to inject OpenMDAO models into Amigo models using `amigo.ExternalComponent`. Alternatively, Amigo can be used as a sub-optimization OpenMDAO component with accurate post-optimality derivatives.
 
 ## Rosenbrock example
 
-To illustrate some of the features of Amigo, below are two short examples.
+Below are two short examples that illustrate some of the features of Amigo.
 
 First, the Rosenbrock function is a frequently used example problem in optimization. In Amigo, all analysis occurs within classes that are derived from `amigo.Component`.
 
