@@ -1,11 +1,11 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from .model import Model, ModelVector
 from .optimizer import Optimizer
 import numpy as np
 
 
-if TYPE_CHECKING:  # type-checkers see it; users don't need runtime package
+if TYPE_CHECKING:
     import openmdao.api as om
 
 
