@@ -342,8 +342,9 @@ class ConstantSet:
         lines = []
         for name in self.consts:
             node = self.consts[name]
+            vtype = _cpp_type_map[node.type]
             lines.append(
-                f"static constexpr {_cpp_type_map[node.type]} {name} = {node.value}"
+                f"inline static constexpr {vtype} {name} = static_cast<{vtype}>({node.value})"
             )
         return lines
 

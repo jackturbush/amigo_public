@@ -79,8 +79,8 @@ class IndexLayout {
 
 #ifdef AMIGO_USE_CUDA
   template <typename T, class ArrayType>
-  static AMGIO_DEVICE void get_values_device(int index, 
-    const int* indx, const T* AMIGO_RESTRICT global, ArrayType& values) const {
+  static AMIGO_DEVICE void get_values_device(int index, 
+    const int* indx, const T* AMIGO_RESTRICT global, ArrayType& values) {
 
     const int base = nodes_per_elem * index;
     #pragma unroll
@@ -89,9 +89,9 @@ class IndexLayout {
     }
   }
 
-  template <typename T, int M>
-  static AMGIO_DEVICE void add_values_atomic(int index,
-    const int* indx, const ArrayType& values, T* AMIGO_RESTRICT global) const {
+  template <typename T, class ArrayType>
+  static AMIGO_DEVICE void add_values_atomic(int index,
+    const int* indx, const ArrayType& values, T* AMIGO_RESTRICT global) {
     const int base = nodes_per_elem * index;
     #pragma unroll
     for (int i = 0; i < nodes_per_elem; i++ ){
@@ -99,9 +99,9 @@ class IndexLayout {
     }
   }
 
-  template <typename T, int M>
-  static AMGIO_DEVICE void add_values(int index, 
-    const int* indx, const ArrayType& values, T* AMIGO_RESTRICT global) const {
+  template <typename T, class ArrayType>
+  static AMIGO_DEVICE void add_values(int index, 
+    const int* indx, const ArrayType& values, T* AMIGO_RESTRICT global) {
     const int base = nodes_per_elem * index;
     #pragma unroll
     for (int i = 0; i < nodes_per_elem; i++ ){

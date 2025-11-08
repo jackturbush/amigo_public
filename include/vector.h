@@ -19,8 +19,8 @@ class SerialVecBackend {
   ~SerialVecBackend() {}
 
   void allocate(int size_) {}
-  void copy_to_host(T* host_dest) {}
-  void copy_to_device(T* host_src) {}
+  void copy_host_to_device(T* host_dest) {}
+  void copy_device_to_host(T* host_src) {}
   T* get_device_ptr() { return nullptr; }
   const T* get_device_ptr() const { return nullptr; }
 };

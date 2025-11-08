@@ -9,6 +9,10 @@
 #include "ordering_utils.h"
 #include "vector.h"
 
+#ifdef AMIGO_USE_CUDA
+#include "cuda/component_group_backend.cuh"
+#endif
+
 namespace amigo {
 
 template <typename T, int ncomp, class Input, int ndata, class Data,
@@ -115,6 +119,9 @@ class SerialGroupBackend {
                                             dir, res);
     }
   }
+
+  void initialize_hessian_pattern(const IndexLayout<ncomp>& layout,
+    const NodeOwners& owners, CSRMat<T>& mat) const {}
 
   void add_hessian_kernel(const IndexLayout<ndata>& data_layout,
                           const IndexLayout<ncomp>& layout,
@@ -580,6 +587,9 @@ class OmpGroupBackend {
     }
   }
 
+  void initialize_hessian_pattern(const IndexLayout<ncomp>& layout, 
+    const NodeOwners& owners, CSRMat<T>& mat) {}
+
   void add_hessian_kernel(const IndexLayout<ndata>& data_layout,
                           const IndexLayout<ncomp>& layout,
                           const Vector<T>& data_vec, const Vector<T>& vec,
@@ -750,8 +760,9 @@ using DefaultGroupBackend =
     OmpGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
 
 #elif defined(AMIGO_USE_CUDA)
-#include "cuda/component_group_backend.cuh"
 
+template <typename T, int ncomp, class Input, int ndata, class Data,
+          class... Components>
 using DefaultGroupBackend =
     CudaGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
 
@@ -810,6 +821,9 @@ class ComponentGroup : public ComponentGroupBase<T> {
                            const Vector<T>& dir, Vector<T>& res) const {
     backend.add_hessian_product_kernel(data_layout, layout, data_vec, vec, dir,
                                        res);
+  }
+  void initialize_hessian_pattern(const NodeOwners& owners, CSRMat<T>& mat) {
+    backend.initialize_hessian_pattern(layout, owners, mat);
   }
   void add_hessian(const Vector<T>& data_vec, const Vector<T>& vec,
                    const NodeOwners& owners, CSRMat<T>& jac) const {

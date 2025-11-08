@@ -651,7 +651,13 @@ class OptimizationProblem {
       delete[] rowp;
       delete[] cols;
 
+      // Copy the non-zero pattern to the device (if applicable)
       mat->copy_pattern_host_to_device();
+
+      // Perform any component group initializations with the Hessian matrix
+      for (size_t i = 0; i < components.size(); i++) {
+        components[i]->initialize_hessian_pattern(*var_owners, *mat);
+      }
 
       return mat;
     }
@@ -814,7 +820,9 @@ class OptimizationProblem {
    */
   std::shared_ptr<CSRMat<T>> create_gradient_jacobian_wrt_data() {
     if (grad_jac) {
-      return grad_jac->duplicate();
+      std::shared_ptr<CSRMat<T>> dup = grad_jac->duplicate();
+      dup->copy_pattern_host_to_device();
+      return dup;
     } else {
       std::vector<int> intervals(components.size() + 1);
       intervals[0] = 0;
@@ -865,6 +873,8 @@ class OptimizationProblem {
 
       delete[] rowp;
       delete[] cols;
+
+      grad_jac->copy_pattern_host_to_device();
 
       return grad_jac;
     }
@@ -1011,7 +1021,9 @@ class OptimizationProblem {
    */
   std::shared_ptr<CSRMat<T>> create_output_jacobian_wrt_data() {
     if (data_jac) {
-      return data_jac->duplicate();
+      std::shared_ptr<CSRMat<T>> dup = data_jac->duplicate();
+      dup->copy_pattern_host_to_device();
+      return dup;
     } else {
       std::vector<int> intervals(components.size() + 1);
       intervals[0] = 0;

@@ -966,7 +966,7 @@ class Model:
             comm_rank = comm.rank
 
         if comm_rank == 0:
-            self._generate_cpp()
+            self.generate_cpp()
             self._build_module(
                 compile_args=compile_args,
                 link_args=link_args,
@@ -979,7 +979,7 @@ class Model:
 
         return
 
-    def _generate_cpp(self):
+    def generate_cpp(self):
         """
         Generate the C++ header and pybind11 wrapper for the model.
 

@@ -4,18 +4,12 @@ project(amigo LANGUAGES CXX)
 # ---------- Options ----------
 option(AMIGO_ENABLE_CUDA   "Build with CUDA (nvcc) support" OFF)
 option(AMIGO_ENABLE_OPENMP "Build with OpenMP support"     ON)
-option(AMIGO_USE_MPI4PY_CAPI "Use mpi4py C API in the Python module" ON)
-
-# Ask CMake to locate BLAS and LAPACK.
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
 
 # ---------- Toolchains / languages ----------
 if(AMIGO_ENABLE_CUDA)
   enable_language(CUDA)
   find_package(CUDAToolkit REQUIRED)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    # Pick something your nvcc supports; adjust or version-gate if needed
     set(CMAKE_CUDA_ARCHITECTURES 80)
   endif()
 endif()
@@ -25,6 +19,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ---------- Dependencies ----------
+# Ask CMake to locate BLAS and LAPACK.
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+
 # MPI (C++ API) for code that uses MPI
 find_package(MPI REQUIRED COMPONENTS CXX)
 
@@ -43,17 +41,15 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Development.Module Interpreter)
 find_package(pybind11 CONFIG REQUIRED)
 
-# If the extension uses mpi4py's C API, get its header dir
-if(AMIGO_USE_MPI4PY_CAPI)
-  execute_process(
-    COMMAND "${Python3_EXECUTABLE}" -c "import mpi4py, sys; print(mpi4py.get_include())"
-    OUTPUT_VARIABLE MPI4PY_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE MPI4PY_RC
-  )
-  if(NOT MPI4PY_RC EQUAL 0 OR NOT EXISTS "${MPI4PY_INCLUDE_DIR}/mpi4py/mpi4py.h")
-    message(FATAL_ERROR "mpi4py header not found; got: ${MPI4PY_INCLUDE_DIR}")
-  endif()
+# Find mpi4py header file
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import mpi4py, sys; print(mpi4py.get_include())"
+  OUTPUT_VARIABLE MPI4PY_INCLUDE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE MPI4PY_RC
+)
+if(NOT MPI4PY_RC EQUAL 0 OR NOT EXISTS "${MPI4PY_INCLUDE_DIR}/mpi4py/mpi4py.h")
+  message(FATAL_ERROR "mpi4py header not found; got: ${MPI4PY_INCLUDE_DIR}")
 endif()
 
 # ---------- Header-only core ----------
@@ -104,10 +100,7 @@ target_link_libraries(amigo PRIVATE
   Python3::Module     # pybind11 usually adds this, but keep explicit
 )
 
-# mpi4py C API header only needed by the module
-if(AMIGO_USE_MPI4PY_CAPI)
-  target_include_directories(amigo PRIVATE "${MPI4PY_INCLUDE_DIR}")
-endif()
+target_include_directories(amigo PRIVATE "${MPI4PY_INCLUDE_DIR}")
 
 # Install amigo
 install(TARGETS amigo LIBRARY DESTINATION amigo)

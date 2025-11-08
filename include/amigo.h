@@ -3,8 +3,8 @@
 
 #ifdef AMIGO_USE_CUDA
 #define AMIGO_KERNEL __global__
-#define AMGIO_DEVICE __device__
-#define AMIGO_HOST_DEVICE __host__ __device___
+#define AMIGO_DEVICE __device__
+#define AMIGO_HOST_DEVICE __host__ __device__
 #define AMIGO_RESTRICT __restrict__
 
 #include <cuda_runtime.h>

@@ -621,6 +621,17 @@ class CSRMat {
   }
 
   /**
+   * @brief Get the device data from the CSR object
+   *
+   * @param rowp Pointer into each row
+   * @param cols Column indices
+   * @param data Numerical entries
+   */
+  void get_device_data(const int *rowp_[], const int *cols_[], T *data_[]){
+    backend.get_device_data(rowp_, cols_, data_);
+  }
+
+  /**
    * @brief Get the index of the first sqdef element
    *
    */
