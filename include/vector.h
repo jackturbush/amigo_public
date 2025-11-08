@@ -19,15 +19,12 @@ class SerialVecBackend {
   void copy_to_device(T* host_src) {}
   T* get_device_ptr() { return nullptr; }
   const T* get_device_ptr() const { return nullptr; }
-
-  // Kernel functions
-  void axpy_kernel(T alpha, const T* x_device_ptr) {}
 };
 
 #ifdef AMIGO_USE_CUDA
 #include "cuda/vector_backend.cuh"
 template <typename T>
-using DefaultVecBackend = CudaBackend<T>;
+using DefaultVecBackend = amigo::CudaVecBackend<T>;
 #else
 template <typename T>
 using DefaultVecBackend = SerialVecBackend<T>;

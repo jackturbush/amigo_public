@@ -1,6 +1,8 @@
 #ifndef AMIGO_CUDA_VECTOR_BACKEND_H
 #define AMIGO_CUDA_VECTOR_BACKEND_H
 
+#include <cuda_runtime.h>
+
 #include "amigo.h"
 
 namespace amigo {
