@@ -209,6 +209,9 @@ class CudaGroupBackend {
     dim3 grid((num_elements + TPB - 1) / TPB);
     dim3 block(TPB);
 
+    int size = res.get_size();
+    cudaMemset(res_values, 0, size * sizeof(T));
+
     detail::gradient_kernel_atomic<T, ncomp, Input, ndata, Data, Components...>
         <<<grid, block>>>(num_elements, data_indices, vec_indices, data_values,
                           vec_values, res_values);
@@ -234,6 +237,9 @@ class CudaGroupBackend {
     const T* dir_values = dir.get_device_array();
     T* res_values = res.get_device_array();
 
+    int size = res.get_size();
+    cudaMemset(res_values, 0, size * sizeof(T));
+
     detail::hessian_product_kernel_atomic<T, ncomp, Input, ndata, Data,
                                           Components...>
         <<<grid, block>>>(num_elements, data_indices, vec_indices, data_values,
@@ -258,8 +264,13 @@ class CudaGroupBackend {
     const T* data_values = data_vec.get_device_array();
     const T* vec_values = vec.get_device_array();
 
+    int nnz;
+    mat.get_data(nullptr, nullptr, &nnz, nullptr, nullptr, nullptr);
+
     T* csr_data;
     mat.get_device_data(nullptr, nullptr, &csr_data);
+
+    cudaMemset(csr_data, 0, nnz * sizeof(T));
 
     detail::hessian_kernel_atomic<T, ncomp, Input, ndata, Data, Components...>
         <<<grid, block>>>(num_elements, data_indices, vec_indices, d_hess_pos,

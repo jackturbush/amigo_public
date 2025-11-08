@@ -711,6 +711,7 @@ class OptimizationProblem {
     var_dist.begin_forward(x, var_ctx);
     var_dist.end_forward(x, var_ctx);
     x->copy_host_to_device();
+    data_vec->copy_host_to_device();
 
     g->zero();
     for (size_t i = 0; i < components.size(); i++) {
@@ -762,11 +763,13 @@ class OptimizationProblem {
     var_dist.begin_forward(x, var_ctx);
     var_dist.end_forward(x, var_ctx);
     x->copy_host_to_device();
+    data_vec->copy_host_to_device();
 
     matrix->zero();
     for (size_t i = 0; i < components.size(); i++) {
       components[i]->add_hessian(*data_vec, *x, *var_owners, *matrix);
     }
+    matrix->copy_data_device_to_host();
 
     if (zero_design_contrib) {
       int nrows, ncols, nnz;
@@ -786,7 +789,6 @@ class OptimizationProblem {
       }
     }
 
-    matrix->copy_data_device_to_host();
     mat_dist->begin_assembly(matrix, mat_dist_ctx);
     mat_dist->end_assembly(matrix, mat_dist_ctx);
   }
