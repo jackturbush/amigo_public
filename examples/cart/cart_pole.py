@@ -413,6 +413,7 @@ model = create_cart_model()
 
 if args.build:
     import sys
+
     compile_args = []
     link_args = []
     define_macros = []
