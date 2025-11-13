@@ -389,9 +389,11 @@ PYBIND11_MODULE(amigo, mod) {
       .def("partition_from_root",
            &amigo::OptimizationProblem<double>::partition_from_root,
            py::arg("root") = 0)
-      .def("create_vector", &amigo::OptimizationProblem<double>::create_vector)
+      .def("create_vector", &amigo::OptimizationProblem<double>::create_vector,
+           py::arg("loc") = amigo::MemoryLocation::HOST_AND_DEVICE)
       .def("create_data_vector",
-           &amigo::OptimizationProblem<double>::create_data_vector)
+           &amigo::OptimizationProblem<double>::create_data_vector,
+           py::arg("loc") = amigo::MemoryLocation::HOST_AND_DEVICE)
       .def("get_data_vector",
            &amigo::OptimizationProblem<double>::get_data_vector)
       .def("set_data_vector",

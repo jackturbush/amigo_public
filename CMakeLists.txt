@@ -37,6 +37,38 @@ if(AMIGO_ENABLE_OPENMP)
   endif()
 endif()
 
+# # Find METIS
+# find_package(METIS REQUIRED)
+
+# # Try to find METIS
+# find_path(METIS_INCLUDE_DIR metis.h
+#   HINTS
+#     ${METIS_ROOT}/include
+#     /usr/local/include
+#     /usr/include
+# )
+
+# find_library(METIS_LIBRARY metis
+#   HINTS
+#     ${METIS_ROOT}/lib
+#     /usr/local/lib
+#     /usr/lib
+# )
+
+# if (NOT METIS_INCLUDE_DIR OR NOT METIS_LIBRARY)
+#   message(FATAL_ERROR "Could not find METIS. Set METIS_ROOT or add its paths manually.")
+# endif()
+
+# # Create an imported target
+# add_library(METIS::metis UNKNOWN IMPORTED)
+
+# set_target_properties(METIS::metis PROPERTIES
+#   IMPORTED_LOCATION "${METIS_LIBRARY}"
+#   INTERFACE_INCLUDE_DIRECTORIES "${METIS_INCLUDE_DIR}"
+# )
+
+# target_link_libraries(amigo PRIVATE METIS::metis)
+
 # Python / pybind11 for the extension module
 find_package(Python3 REQUIRED COMPONENTS Development.Module Interpreter)
 find_package(pybind11 CONFIG REQUIRED)
