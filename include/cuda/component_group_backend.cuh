@@ -196,7 +196,7 @@ class CudaGroupBackend {
                            const IndexLayout<ncomp>& layout,
                            const Vector<T>& data_vec, const Vector<T>& vec,
                            Vector<T>& res) const {
-    const int TPB = 256;
+    const int TPB = 32;
     int num_elements;
     const int* data_indices;
     const int* vec_indices;
@@ -220,7 +220,7 @@ class CudaGroupBackend {
                                   const Vector<T>& data_vec,
                                   const Vector<T>& vec, const Vector<T>& dir,
                                   Vector<T>& res) const {
-    const int TPB = 256;
+    const int TPB = 32;
     int num_elements;
     const int* data_indices;
     const int* vec_indices;
@@ -246,7 +246,7 @@ class CudaGroupBackend {
                           const IndexLayout<ncomp>& layout,
                           const Vector<T>& data_vec, const Vector<T>& vec,
                           const NodeOwners& owners, CSRMat<T>& mat) const {
-    const int TPB = 256;
+    const int TPB = 32;
     int num_elements;
     const int* data_indices;
     const int* vec_indices;

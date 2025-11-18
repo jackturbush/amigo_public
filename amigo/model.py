@@ -668,11 +668,7 @@ class Model:
         return np.nonzero(temp)[0]
 
     def initialize(
-        self,
-        comm=COMM_WORLD,
-        loc=MemoryLocation.HOST_AND_DEVICE,
-        order_type=OrderingType.AMD,
-        order_for_block=False,
+        self, comm=COMM_WORLD, order_type=OrderingType.AMD, order_for_block=False
     ):
         """
         Initialize the variable indices for each component and resolve all links.
@@ -694,7 +690,7 @@ class Model:
         self.num_constraints = len(self.constraint_indices)
 
         self._initialized = True
-        self.problem = self._create_opt_problem(comm=comm, loc=loc)
+        self.problem = self._create_opt_problem(comm=comm)
 
         return
 
@@ -815,7 +811,7 @@ class Model:
 
         return self.comp[comp_name].get_meta(name)
 
-    def _create_opt_problem(self, comm=COMM_WORLD, loc=MemoryLocation.HOST_AND_DEVICE):
+    def _create_opt_problem(self, comm=COMM_WORLD):
         """
         Create the optimization problem object that is used to evaluate the gradient and
         Hessian of the Lagrangian.
@@ -863,7 +859,7 @@ class Model:
         is_multiplier.get_array()[:] = 0
         is_multiplier.get_array()[self.constraint_indices] = 1
         prob = OptimizationProblem(
-            comm, loc, data_owners, var_owners, output_owners, is_multiplier, objs
+            comm, data_owners, var_owners, output_owners, is_multiplier, objs
         )
 
         return prob

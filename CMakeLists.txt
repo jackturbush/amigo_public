@@ -122,9 +122,9 @@ if(AMIGO_ENABLE_CUDA)
   target_link_libraries(amigo_backend PUBLIC CUDA::cudart MPI::MPI_CXX)
 
   target_include_directories(amigo_backend
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_include_directories(amigo_backend
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../a2d/include
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../a2d/include
   )
 
   # Feature flags visible to dependents
@@ -136,6 +136,7 @@ if(AMIGO_ENABLE_CUDA)
   set_target_properties(amigo_backend PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 
   target_link_libraries(amigo PRIVATE amigo_backend CUDA::cudart)
