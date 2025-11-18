@@ -9,10 +9,10 @@ const config: Config = {
   tagline: 'A friendly library for MDO on HPC',
   favicon: 'img/favicon.ico',
 
-  url: 'https://Mersoltane.github.io',  // Replace with my GitHub username
-  baseUrl: '/amigo/',  // Replace with my repo name
+  url: 'https://gjkennedy.github.io',
+  baseUrl: '/amigo/',
 
-  organizationName: 'Mersoltane', 
+  organizationName: 'gjkennedy', 
   projectName: 'amigo',
 
   onBrokenLinks: 'warn',
