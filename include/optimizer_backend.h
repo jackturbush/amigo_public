@@ -208,11 +208,11 @@ void compute_update(T barrier_param, T gamma, const OptInfo<T>& info,
     // Compute the update step
     if (!std::isinf(info.lbx[i])) {
       T bzl = -((x - info.lbx[i]) * pt.zl[i] - barrier_param);
-      pzl[i] = (bzl - pt.zl[i] * px) / (x - info.lbx[i]);
+      up.zl[i] = (bzl - pt.zl[i] * px) / (x - info.lbx[i]);
     }
     if (!std::isinf(ubx[i])) {
       T bzu = -((info.ubx[i] - x) * zu[i] - barrier_param);
-      pzu[i] = (bzu + pt.zu[i] * px) / (info.ubx[i] - x);
+      up.zu[i] = (bzu + pt.zu[i] * px) / (info.ubx[i] - x);
     }
   }
 
@@ -407,7 +407,7 @@ void compute_max_step(const T tau, OptInfo<T>& info, OptStateData<const T>& pt,
           z_index = index;
         }
       }
-      if (pztl[i] < 0.0) {
+      if (up.ztl[i] < 0.0) {
         T alpha = -tau * pt.ztl[i] / up.ztl[i];
         if (alpha < alpha_z_max) {
           alpha_z_max = alpha;
