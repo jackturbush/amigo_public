@@ -6,7 +6,7 @@
 #include "amigo.h"
 #include "optimizer_backend.h"
 
-// #ifdef AMIGO_USE_CUDA
+#ifdef AMIGO_USE_CUDA
 
 namespace amgio {
 
@@ -417,7 +417,7 @@ AMIGO_KERNEL void compute_max_step_slack_kernel(
           local_x_idx = idx;
         }
       }
-      if (ptl[i] < 0.0) {
+      if (up.tl[i] < 0.0) {
         T alpha = -tau * pt.tl[i] / up.tl[i];
         if (alpha < local_alpha_x) {
           local_alpha_x = alpha;

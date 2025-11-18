@@ -1,9 +1,14 @@
 #ifndef AMIGO_OPTIMIZER_BACKEND_H
 #define AMIGO_OPTIMIZER_BACKEND_H
 
+#include <memory>
+
 #include "amigo.h"
 
 namespace amigo {
+
+template <typename T>
+class OptVector;
 
 namespace detail {
 
@@ -53,8 +58,8 @@ class OptStateData {
 };
 
 template <typename T>
-void initialize_multipliers_and_slacks(T barrier_param, const T* g,
-                                       OptStateData<T>& pt) {
+void initialize_multipliers_and_slacks(T barrier_param, const OptInfo<T>& info,
+                                       const T* g, OptStateData<T>& pt) {
   // Initialize the lower and upper bound dual variables
 #ifdef AMIGO_USE_OPENMP
 #pragma omp parallel for
@@ -210,8 +215,8 @@ void compute_update(T barrier_param, T gamma, const OptInfo<T>& info,
       T bzl = -((x - info.lbx[i]) * pt.zl[i] - barrier_param);
       up.zl[i] = (bzl - pt.zl[i] * px) / (x - info.lbx[i]);
     }
-    if (!std::isinf(ubx[i])) {
-      T bzu = -((info.ubx[i] - x) * zu[i] - barrier_param);
+    if (!std::isinf(info.ubx[i])) {
+      T bzu = -((info.ubx[i] - x) * pt.zu[i] - barrier_param);
       up.zu[i] = (bzu + pt.zu[i] * px) / (info.ubx[i] - x);
     }
   }
@@ -293,7 +298,7 @@ void compute_diagonal(const OptInfo<T>& info, OptStateData<const T>& pt,
 #endif  // AMIGO_USE_OPENMP
   for (int i = 0; i < info.num_variables; i++) {
     // Get the gradient component corresponding to this variable
-    int index = design_variable_indices[i];
+    int index = info.design_variable_indices[i];
 
     T x = pt.xlam[index];
 
@@ -391,7 +396,7 @@ void compute_max_step(const T tau, OptInfo<T>& info, OptStateData<const T>& pt,
           x_index = index;
         }
       }
-      if (ptl[i] < 0.0) {
+      if (up.tl[i] < 0.0) {
         T alpha = -tau * pt.tl[i] / up.tl[i];
         if (alpha < alpha_x_max) {
           alpha_x_max = alpha;

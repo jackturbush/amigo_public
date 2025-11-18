@@ -11,7 +11,7 @@
 #include "optimizer_backend.h"
 
 #ifdef AMIGO_USE_CUDA
-#incude "cuda/optimizer_backend.cuh"
+#include "cuda/optimizer_backend.cuh"
 #endif  // AMIGO_USE_CUDA
 
 namespace amigo {
@@ -46,7 +46,7 @@ class OptVector {
 
   template <ExecPolicy policy>
   void get_bound_duals(T** zl, T** zu) {
-    T* array = duals->get_array<policy>();
+    T* array = duals->template get_array<policy>();
     if (zl) {
       *zl = &array[0];
     }
@@ -56,7 +56,7 @@ class OptVector {
   }
   template <ExecPolicy policy>
   void get_bound_duals(const T** zl, const T** zu) const {
-    const T* array = duals->get_array<policy>();
+    const T* array = duals->template get_array<policy>();
     if (zl) {
       *zl = &array[0];
     }
@@ -66,7 +66,7 @@ class OptVector {
   }
   template <ExecPolicy policy>
   void get_slacks(T** s, T** sl, T** tl, T** su, T** tu) {
-    T* array = duals->get_array<policy>();
+    T* array = duals->template get_array<policy>();
     const int offset = 2 * num_variables;
     if (s) {
       *s = &array[offset];
@@ -87,7 +87,7 @@ class OptVector {
   template <ExecPolicy policy>
   void get_slacks(const T** s, const T** sl, const T** tl, const T** su,
                   const T** tu) const {
-    const T* array = duals->get_array<policy>();
+    const T* array = duals->template get_array<policy>();
     const int offset = 2 * num_variables;
     if (s) {
       *s = &array[offset];
@@ -107,7 +107,7 @@ class OptVector {
   }
   template <ExecPolicy policy>
   void get_slack_duals(T** zsl, T** ztl, T** zsu, T** ztu) {
-    T* array = duals->get_array<policy>();
+    T* array = duals->template get_array<policy>();
     const int offset = 2 * num_variables + 5 * num_inequalities;
     if (zsl) {
       *zsl = &array[offset];
@@ -125,7 +125,7 @@ class OptVector {
   template <ExecPolicy policy>
   void get_slack_duals(const T** zsl, const T** ztl, const T** zsu,
                        const T** ztu) const {
-    const T* array = duals->get_array<policy>();
+    const T* array = duals->template get_array<policy>();
     const int offset = 2 * num_variables + 5 * num_inequalities;
     if (zsl) {
       *zsl = &array[offset];
@@ -143,11 +143,11 @@ class OptVector {
 
   template <ExecPolicy policy>
   T* get_solution_array() {
-    return x->get_array<policy>();
+    return x->template get_array<policy>();
   }
   template <ExecPolicy policy>
   const T* get_solution_array() const {
-    return x->get_array<policy>();
+    return x->template get_array<policy>();
   }
 
   // Get the underlying solution vector
@@ -281,15 +281,16 @@ class InteriorPointOptimizer {
     info.num_equalities = num_equalities;
     info.num_inequalities = num_inequalities;
 
-    info.design_variable_indices = design_variable_indices->get_array<policy>();
-    info.equality_indices = equality_indices->get_array<policy>();
-    info.equality_indices = inequality_indices->get_array<policy>();
+    info.design_variable_indices =
+        design_variable_indices->template get_array<policy>();
+    info.equality_indices = equality_indices->template get_array<policy>();
+    info.equality_indices = inequality_indices->template get_array<policy>();
 
-    info.lbx = lbx->get_array<policy>();
-    info.ubx = ubx->get_array<policy>();
-    info.lbc = lbc->get_array<policy>();
-    info.ubc = ubc->get_array<policy>();
-    info.lbh = lbh->get_array<policy>();
+    info.lbx = lbx->template get_array<policy>();
+    info.ubx = ubx->template get_array<policy>();
+    info.lbc = lbc->template get_array<policy>();
+    info.ubc = ubc->template get_array<policy>();
+    info.lbh = lbh->template get_array<policy>();
   }
 
   /**
@@ -328,7 +329,7 @@ class InteriorPointOptimizer {
         detail::OptStateData<T>::template make<policy>(vars);
 
     // Set a pointer to the vector
-    const T* g = grad->get_array<policy>();
+    const T* g = grad->template get_array<policy>();
 
     if constexpr (policy == ExecPolicy::SERIAL ||
                   policy == ExecPolicy::OPENMP) {
@@ -361,8 +362,8 @@ class InteriorPointOptimizer {
         detail::OptStateData<const T>::template make<policy>(vars);
 
     // Set the gradient vector
-    const T* g = grad->get_array<policy>();
-    T* r = res->get_array<policy>();
+    const T* g = grad->template get_array<policy>();
+    T* r = res->template get_array<policy>();
 
     // Zero the residual
     res->zero();
@@ -437,7 +438,7 @@ class InteriorPointOptimizer {
 
     detail::OptStateData<const T> pt =
         detail::OptStateData<const T>::template make<policy>(vars);
-    T* diag = diagonal->get_array<policy>();
+    T* diag = diagonal->template get_array<policy>();
 
     // Perform the update
     if constexpr (policy == ExecPolicy::SERIAL ||

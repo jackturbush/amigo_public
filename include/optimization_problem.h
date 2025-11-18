@@ -17,7 +17,6 @@ class OptimizationProblem {
    * @brief Construct a new Optimization Problem object
    *
    * @param comm The MPI communicator
-   * @param mem_loc Memory location for the problem
    * @param data_owners The owners of the data
    * @param var_owners The owners for the variables (inputs/multipliers)
    * @param output_owners The owners for the outputs
@@ -29,7 +28,8 @@ class OptimizationProblem {
       std::shared_ptr<NodeOwners> var_owners,
       std::shared_ptr<NodeOwners> output_owners,
       std::shared_ptr<Vector<int>> is_multiplier_,
-      const std::vector<std::shared_ptr<ComponentGroupBase<T>>>& components)
+      const std::vector<std::shared_ptr<ComponentGroupBase<T, policy>>>&
+          components)
       : comm(comm),
         data_owners(data_owners),
         var_owners(var_owners),
@@ -209,7 +209,8 @@ class OptimizationProblem {
    * @param root Rank of the root processor
    * @return OptimizationProblem<T> The new OptimizationProblem on all procs
    */
-  std::shared_ptr<OptimizationProblem<T>> partition_from_root(int root = 0) {
+  std::shared_ptr<OptimizationProblem<T, policy>> partition_from_root(
+      int root = 0) {
     int mpi_size, mpi_rank;
     MPI_Comm_size(comm, &mpi_size);
     MPI_Comm_rank(comm, &mpi_rank);
@@ -367,7 +368,7 @@ class OptimizationProblem {
                                      ext_output_nodes.data());
 
     // Allocate space to store the new components
-    std::vector<std::shared_ptr<ComponentGroupBase<T>>> new_comps(
+    std::vector<std::shared_ptr<ComponentGroupBase<T, policy>>> new_comps(
         components.size());
 
     // Make the new component with the new ordering
@@ -381,8 +382,8 @@ class OptimizationProblem {
       delete[] partition;
     }
 
-    std::shared_ptr<OptimizationProblem<T>> opt =
-        std::make_shared<OptimizationProblem<T>>(
+    std::shared_ptr<OptimizationProblem<T, policy>> opt =
+        std::make_shared<OptimizationProblem<T, policy>>(
             comm, new_data_owners, new_var_owners, new_output_owners, nullptr,
             new_comps);
 
@@ -404,10 +405,11 @@ class OptimizationProblem {
    * @param distribute Boolean indicating whether to distribute external values
    */
   template <typename T1>
-  void scatter_vector(const std::shared_ptr<Vector<T1>> root_vec,
-                      const std::shared_ptr<OptimizationProblem<T>> dist_prob,
-                      std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
-                      bool distribute = true) {
+  void scatter_vector(
+      const std::shared_ptr<Vector<T1>> root_vec,
+      const std::shared_ptr<OptimizationProblem<T, policy>> dist_prob,
+      std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
+      bool distribute = true) {
     int mpi_rank, mpi_size;
     MPI_Comm_rank(comm, &mpi_rank);
     MPI_Comm_size(comm, &mpi_size);
@@ -467,9 +469,10 @@ class OptimizationProblem {
    * @param root The rank of the root processor
    */
   template <typename T1>
-  void gather_vector(const std::shared_ptr<OptimizationProblem<T>> dist_prob,
-                     const std::shared_ptr<Vector<T1>> dist_vec,
-                     std::shared_ptr<Vector<T1>> root_vec, int root = 0) {
+  void gather_vector(
+      const std::shared_ptr<OptimizationProblem<T, policy>> dist_prob,
+      const std::shared_ptr<Vector<T1>> dist_vec,
+      std::shared_ptr<Vector<T1>> root_vec, int root = 0) {
     int mpi_rank, mpi_size;
     MPI_Comm_rank(comm, &mpi_rank);
     MPI_Comm_size(comm, &mpi_size);
@@ -525,7 +528,7 @@ class OptimizationProblem {
   template <typename T1>
   void scatter_data_vector(
       const std::shared_ptr<Vector<T1>> root_vec,
-      const std::shared_ptr<OptimizationProblem<T>> dist_prob,
+      const std::shared_ptr<OptimizationProblem<T, policy>> dist_prob,
       std::shared_ptr<Vector<T1>> dist_vec, int root = 0,
       bool distribute = true) {
     int mpi_rank, mpi_size;
@@ -642,6 +645,7 @@ class OptimizationProblem {
       }
 
       // Distribute the pattern across matrices
+      MemoryLocation mem_loc = MemoryLocation::HOST_AND_DEVICE;
       mat_dist =
           new MatrixDistribute(comm, mem_loc, var_owners, var_owners,
                                num_variables, num_variables, rowp, cols, mat);
@@ -768,9 +772,12 @@ class OptimizationProblem {
     }
 
     // If the host and device need the values, copy them back
-    if (mem_loc == MemoryLocation::HOST_AND_DEVICE) {
-      matrix->copy_data_device_to_host();
-    } else if (mem_loc == MemoryLocation::DEVICE_ONLY) {
+    // if (mem_loc == MemoryLocation::HOST_AND_DEVICE) {
+    //   matrix->copy_data_device_to_host();
+    // } else if (mem_loc == MemoryLocation::DEVICE_ONLY) {
+    //   matrix->copy_ext_data_device_to_host();
+    // }
+    if constexpr (policy == ExecPolicy::CUDA) {
       matrix->copy_ext_data_device_to_host();
     }
 
@@ -869,6 +876,7 @@ class OptimizationProblem {
                                                  element_output, &rowp, &cols);
 
       // Distribute the pattern across matrices
+      MemoryLocation mem_loc = MemoryLocation::HOST_AND_DEVICE;
       grad_jac_dist =
           new MatrixDistribute(comm, mem_loc, var_owners, data_owners,
                                num_variables, num_data, rowp, cols, grad_jac);
@@ -999,6 +1007,7 @@ class OptimizationProblem {
                                                  element_output, &rowp, &cols);
 
       // Distribute the pattern across matrices
+      MemoryLocation mem_loc = MemoryLocation::HOST_AND_DEVICE;
       input_jac_dist = new MatrixDistribute(
           comm, mem_loc, output_owners, var_owners, num_outputs, num_variables,
           rowp, cols, input_jac);
@@ -1063,6 +1072,7 @@ class OptimizationProblem {
                                                  element_output, &rowp, &cols);
 
       // Distribute the pattern across matrices
+      MemoryLocation mem_loc = MemoryLocation::HOST_AND_DEVICE;
       data_jac_dist =
           new MatrixDistribute(comm, mem_loc, output_owners, data_owners,
                                num_outputs, num_data, rowp, cols, data_jac);

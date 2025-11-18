@@ -93,8 +93,8 @@ class ExternalComponentEvaluation {
  *
  * @tparam T Template type for the computation
  */
-template <typename T>
-class ExternalComponentGroup : public ComponentGroupBase<T> {
+template <typename T, ExecPolicy policy>
+class ExternalComponentGroup : public ComponentGroupBase<T, policy> {
  public:
   ExternalComponentGroup(int nvars, const int vars[], int ncon,
                          const int cons[],
@@ -112,7 +112,7 @@ class ExternalComponentGroup : public ComponentGroupBase<T> {
   /**
    * @brief This is not a clone-able derived class
    */
-  std::shared_ptr<ComponentGroupBase<T>> clone(
+  std::shared_ptr<ComponentGroupBase<T, policy>> clone(
       int num_elements, std::shared_ptr<Vector<int>> data_idx,
       std::shared_ptr<Vector<int>> layout_idx,
       std::shared_ptr<Vector<int>> output_idx) const {
