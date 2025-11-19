@@ -763,6 +763,37 @@ class OmpGroupBackend {
   int* elem_per_color;
 };
 
+// Set up a struct to select the backend type depending on policy
+template <ExecPolicy policy, typename T, int ncomp, typename Input, int ndata,
+          typename Data, typename... Components>
+struct GroupBackendSelector;
+
+// SERIAL specialization
+template <typename T, int ncomp, typename Input, int ndata, typename Data,
+          typename... Components>
+struct GroupBackendSelector<ExecPolicy::SERIAL, T, ncomp, Input, ndata, Data,
+                            Components...> {
+  using type = SerialGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
+};
+
+// OPENMP specialization
+template <typename T, int ncomp, typename Input, int ndata, typename Data,
+          typename... Components>
+struct GroupBackendSelector<ExecPolicy::OPENMP, T, ncomp, Input, ndata, Data,
+                            Components...> {
+  using type = OmpGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
+};
+
+#ifdef AMIGO_USE_CUDA
+// CUDA specialization only when enabled
+template <typename T, int ncomp, typename Input, int ndata, typename Data,
+          typename... Components>
+struct GroupBackendSelector<ExecPolicy::CUDA, T, ncomp, Input, ndata, Data,
+                            Components...> {
+  using type = CudaGroupBackend<T, ncomp, Input, ndata, Data, Components...>;
+};
+#endif
+
 template <typename T, ExecPolicy policy, class... Components>
 class ComponentGroup : public ComponentGroupBase<T, policy> {
  public:
@@ -777,13 +808,8 @@ class ComponentGroup : public ComponentGroupBase<T, policy> {
       __get_collection_noutputs<Components...>::value;
 
   // Use whatever class is defined as the default backend
-  using Backend = std::conditional_t<
-      policy == ExecPolicy::SERIAL,
-      SerialGroupBackend<T, ncomp, Input, ndata, Data, Components...>,
-      std::conditional_t<
-          policy == ExecPolicy::OPENMP,
-          OmpGroupBackend<T, ncomp, Input, ndata, Data, Components...>,
-          CudaGroupBackend<T, ncomp, Input, ndata, Data, Components...>>>;
+  using Backend = typename GroupBackendSelector<policy, T, ncomp, Input, ndata,
+                                                Data, Components...>::type;
 
   using OutputBackend =
       DefaultOutputBackend<T, ncomp, ndata, noutputs, Components...>;

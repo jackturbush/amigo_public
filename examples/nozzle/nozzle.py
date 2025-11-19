@@ -658,8 +658,7 @@ elif args.build:
         debug=args.use_debug,
     )
 
-loc = am.MemoryLocation.HOST_AND_DEVICE
-model.initialize(loc=loc, order_type=am.OrderingType.NATURAL)
+model.initialize(order_type=am.OrderingType.NATURAL)
 
 # Get the data and set the target pressure distribution
 data = model.get_data_vector()

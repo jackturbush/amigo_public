@@ -337,9 +337,10 @@ void compute_diagonal(const OptInfo<T>& info, OptStateData<const T>& pt,
 }
 
 template <typename T>
-void compute_max_step(const T tau, OptInfo<T>& info, OptStateData<const T>& pt,
-                      OptStateData<const T>& up, T& alpha_x_max, int& x_index,
-                      T& alpha_z_max, int& z_index) {
+void compute_max_step(const T tau, const OptInfo<T>& info,
+                      OptStateData<const T>& pt, OptStateData<const T>& up,
+                      T& alpha_x_max, int& x_index, T& alpha_z_max,
+                      int& z_index) {
   // Check for steps lengths for the design variables and slacks
   for (int i = 0; i < info.num_variables; i++) {
     // Get the gradient component corresponding to this variable

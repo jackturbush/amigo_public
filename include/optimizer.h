@@ -678,24 +678,24 @@ class InteriorPointOptimizer {
       // Get the dual values for the bound constraints
       const T *zl, *zu;
       const T *pzl, *pzu;
-      vars->get_bound_duals(&zl, &zu);
-      update->get_bound_duals(&pzl, &pzu);
+      vars->template get_bound_duals<policy>(&zl, &zu);
+      update->template get_bound_duals<policy>(&pzl, &pzu);
 
       // Get the slack variable values
       const T *s, *sl, *tl, *su, *tu;
       const T *ps, *psl, *ptl, *psu, *ptu;
-      vars->get_slacks(&s, &sl, &tl, &su, &tu);
-      update->get_slacks(&ps, &psl, &ptl, &psu, &ptu);
+      vars->template get_slacks<policy>(&s, &sl, &tl, &su, &tu);
+      update->template get_slacks<policy>(&ps, &psl, &ptl, &psu, &ptu);
 
       // Get the dual values for the slacks
       const T *zsl, *ztl, *zsu, *ztu;
       const T *pzsl, *pztl, *pzsu, *pztu;
-      vars->get_slack_duals(&zsl, &ztl, &zsu, &ztu);
-      update->get_slack_duals(&pzsl, &pztl, &pzsu, &pztu);
+      vars->template get_slack_duals<policy>(&zsl, &ztl, &zsu, &ztu);
+      update->template get_slack_duals<policy>(&pzsl, &pztl, &pzsu, &pztu);
 
       // Get the solution update
-      const T* xlam = vars->get_solution_array();
-      const T* pxlam = update->get_solution_array();
+      const T* xlam = vars->template get_solution_array<policy>();
+      const T* pxlam = update->template get_solution_array<policy>();
 
       // Set the gradient vector
       const Vector<T>& g = *grad;
@@ -734,9 +734,10 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_variables; i++) {
         int index = info.design_variable_indices[i];
-        if (!std::isinf(lbx[i])) {
-          T rzl = (xlam[index] - lbx[i]) * zl[i] - barrier_param;
-          t[i] = (xlam[index] - lbx[i]) * pzl[i] + pxlam[index] * zl[i] + rzl;
+        if (!std::isinf(info.lbx[i])) {
+          T rzl = (xlam[index] - info.lbx[i]) * zl[i] - barrier_param;
+          t[i] =
+              (xlam[index] - info.lbx[i]) * pzl[i] + pxlam[index] * zl[i] + rzl;
         }
       }
       std::printf("%-40s %15.6e\n", "||(x - lbx) * pzl + px * zl + rzl|| ",
@@ -746,9 +747,10 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_variables; i++) {
         int index = info.design_variable_indices[i];
-        if (!std::isinf(ubx[i])) {
-          T rzu = (ubx[i] - xlam[index]) * zu[i] - barrier_param;
-          t[i] = (ubx[i] - xlam[index]) * pzu[i] - zu[i] * pxlam[index] + rzu;
+        if (!std::isinf(info.ubx[i])) {
+          T rzu = (info.ubx[i] - xlam[index]) * zu[i] - barrier_param;
+          t[i] =
+              (info.ubx[i] - xlam[index]) * pzu[i] - zu[i] * pxlam[index] + rzu;
         }
       }
       std::printf("%-40s %15.6e\n", "||(ubx - x) * pzu - px * zu + rzu|| ",
@@ -772,8 +774,8 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(lbc[i])) {
-          T rsl = s[i] - lbc[i] - sl[i] + tl[i];
+        if (!std::isinf(info.lbc[i])) {
+          T rsl = s[i] - info.lbc[i] - sl[i] + tl[i];
           t[index] = ps[i] - psl[i] + ptl[i] + rsl;
         }
       }
@@ -784,7 +786,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(lbc[i])) {
+        if (!std::isinf(info.lbc[i])) {
           T rlaml = gamma - zsl[i] - ztl[i];
           t[index] = -pzsl[i] - pztl[i] + rlaml;
         }
@@ -796,7 +798,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(lbc[i])) {
+        if (!std::isinf(info.lbc[i])) {
           T rzsl = sl[i] * zsl[i] - barrier_param;
           t[index] = sl[i] * pzsl[i] + zsl[i] * psl[i] + rzsl;
         }
@@ -808,7 +810,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(lbc[i])) {
+        if (!std::isinf(info.lbc[i])) {
           T rztl = tl[i] * ztl[i] - barrier_param;
           t[index] = tl[i] * pztl[i] + ztl[i] * ptl[i] + rztl;
         }
@@ -821,8 +823,8 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(ubc[i])) {
-          T rsu = ubc[i] - s[i] - su[i] + tu[i];
+        if (!std::isinf(info.ubc[i])) {
+          T rsu = info.ubc[i] - s[i] - su[i] + tu[i];
           t[index] = -ps[i] - psu[i] + ptu[i] + rsu;
         }
       }
@@ -833,7 +835,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(ubc[i])) {
+        if (!std::isinf(info.ubc[i])) {
           T rlamu = gamma - zsu[i] - ztu[i];
           t[index] = -pzsu[i] - pztu[i] + rlamu;
         }
@@ -845,7 +847,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(ubc[i])) {
+        if (!std::isinf(info.ubc[i])) {
           T rzsu = su[i] * zsu[i] - barrier_param;
           t[index] = su[i] * pzsu[i] + zsu[i] * psu[i] + rzsu;
         }
@@ -857,7 +859,7 @@ class InteriorPointOptimizer {
       t.zero();
       for (int i = 0; i < num_inequalities; i++) {
         int index = info.inequality_indices[i];
-        if (!std::isinf(ubc[i])) {
+        if (!std::isinf(info.ubc[i])) {
           T rztu = tu[i] * ztu[i] - barrier_param;
           t[index] = tu[i] * pztu[i] + ztu[i] * ptu[i] + rztu;
         }
