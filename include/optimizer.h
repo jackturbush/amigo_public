@@ -673,7 +673,7 @@ class InteriorPointOptimizer {
     if constexpr (policy == ExecPolicy::SERIAL ||
                   policy == ExecPolicy::OPENMP) {
       // Recompute the Hessian so it doesn't have the diagonal terms
-      problem->hessian(vars->get_solution(), hessian);
+      problem->hessian(T(1.0), vars->get_solution(), hessian);
 
       // Get the dual values for the bound constraints
       const T *zl, *zu;

@@ -433,13 +433,14 @@ PYBIND11_MODULE(amigo, mod) {
                                       policy>::get_local_to_global_data_numbers)
       .def("update", &amigo::OptimizationProblem<double, policy>::update)
       .def("lagrangian",
-           &amigo::OptimizationProblem<double, policy>::lagrangian)
-      .def("gradient", &amigo::OptimizationProblem<double, policy>::gradient)
+           &amigo::OptimizationProblem<double, policy>::lagrangian,
+           py::arg("alpha"), py::arg("x"))
+      .def("gradient", &amigo::OptimizationProblem<double, policy>::gradient,
+           py::arg("alpha"), py::arg("x"), py::arg("grad"))
       .def("create_matrix",
            &amigo::OptimizationProblem<double, policy>::create_matrix)
       .def("hessian", &amigo::OptimizationProblem<double, policy>::hessian,
-           py::arg("x"), py::arg("hess"),
-           py::arg("zero_design_contrib") = false)
+           py::arg("alpha"), py::arg("x"), py::arg("hess"))
       .def("scatter_vector",
            &amigo::OptimizationProblem<double, policy>::scatter_vector<double>,
            py::arg("root_vec"), py::arg("dist_problem"), py::arg("dist_vec"),

@@ -10,33 +10,33 @@ namespace amigo {
 
 namespace detail {
 
-template <class Input, class Data, class Component, class... Remain>
-AMIGO_DEVICE void add_gradient(Data& data, Input& input, Input& grad) {
+template <typename T, class Input, class Data, class Component, class... Remain>
+AMIGO_DEVICE void add_gradient(T alpha, Data& data, Input& input, Input& grad) {
   if constexpr (!Component::is_compute_empty) {
-    Component::gradient(data, input, grad);
+    Component::gradient(alpha, data, input, grad);
   }
 
   if constexpr (sizeof...(Remain) > 0) {
-    add_gradient<Input, Data, Remain...>(data, input, grad);
+    add_gradient<Input, Data, Remain...>(alpha, data, input, grad);
   }
 }
 
-template <class Input, class Data, class Component, class... Remain>
-AMIGO_DEVICE void add_hessian_product(Data& data, Input& input, Input& dir,
-                                      Input& h) {
+template <typename T, class Input, class Data, class Component, class... Remain>
+AMIGO_DEVICE void add_hessian_product(T alpha, Data& data, Input& input,
+                                      Input& dir, Input& h) {
   if constexpr (!Component::is_compute_empty) {
     Input grad;
-    Component::hessian(data, input, dir, grad, h);
+    Component::hessian(alpha, data, input, dir, grad, h);
   }
 
   if constexpr (sizeof...(Remain) > 0) {
-    add_hessian_product<Input, Data, Remain...>(data, input, dir, h);
+    add_hessian_product<Input, Data, Remain...>(alpha, data, input, dir, h);
   }
 }
 
 template <typename T, int ncomp, class Input, int ndata, class Data,
           class... Components>
-AMIGO_KERNEL void gradient_kernel_atomic(int num_elements,
+AMIGO_KERNEL void gradient_kernel_atomic(int num_elements, T alpha,
                                          const int* data_indices,
                                          const int* vec_indices,
                                          const T* data_values,
@@ -53,7 +53,7 @@ AMIGO_KERNEL void gradient_kernel_atomic(int num_elements,
 
   // Compute the gradient
   grad.zero();
-  add_gradient<Input, Data, Components...>(data, input, grad);
+  add_gradient<T, Input, Data, Components...>(alpha, data, input, grad);
 
   // Add the values to grad_values
   IndexLayout<ncomp>::add_values_atomic(index, vec_indices, grad, grad_values);
@@ -62,7 +62,7 @@ AMIGO_KERNEL void gradient_kernel_atomic(int num_elements,
 template <typename T, int ncomp, class Input, int ndata, class Data,
           class... Components>
 AMIGO_KERNEL void hessian_product_kernel_atomic(
-    int num_elements, const int* data_indices, const int* vec_indices,
+    int num_elements, T alpha, const int* data_indices, const int* vec_indices,
     const T* data_values, const T* vec_values, const T* dir_values,
     T* grad_values) {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -78,7 +78,8 @@ AMIGO_KERNEL void hessian_product_kernel_atomic(
 
   // Compute the gradient
   h.zero();
-  add_hessian_product<Input, Data, Components...>(data, input, dir, h);
+  add_hessian_product<T, Input, Data, Components...>(alpha, data, input, dir,
+                                                     h);
 
   // Add the values to grad_values
   IndexLayout<ncomp>::add_values_atomic(index, vec_indices, h, grad_values);
@@ -86,7 +87,7 @@ AMIGO_KERNEL void hessian_product_kernel_atomic(
 
 template <typename T, int ncomp, class Input, int ndata, class Data,
           class... Components>
-AMIGO_KERNEL void hessian_kernel_atomic(int num_elements,
+AMIGO_KERNEL void hessian_kernel_atomic(int num_elements, T alpha,
                                         const int* data_indices,
                                         const int* vec_indices,
                                         const int* csr_pos,
@@ -106,7 +107,8 @@ AMIGO_KERNEL void hessian_kernel_atomic(int num_elements,
   h.zero();
   dir.zero();
   dir[row] = 1.0;
-  add_hessian_product<Input, Data, Components...>(data, input, dir, h);
+  add_hessian_product<T, Input, Data, Components...>(alpha, data, input, dir,
+                                                     h);
 
   // Now add the Hessian contribution
   for (int i = 0; i < ncomp; i++) {
@@ -186,13 +188,13 @@ class CudaGroupBackend {
   }
 
   // This isn't handled properly yet...
-  T lagrangian_kernel(const IndexLayout<ndata>& data_layout,
+  T lagrangian_kernel(T alpha, const IndexLayout<ndata>& data_layout,
                       const IndexLayout<ncomp>& layout,
                       const Vector<T>& data_vec, const Vector<T>& vec) const {
     return 0.0;
   }
 
-  void add_gradient_kernel(const IndexLayout<ndata>& data_layout,
+  void add_gradient_kernel(T alpha, const IndexLayout<ndata>& data_layout,
                            const IndexLayout<ncomp>& layout,
                            const Vector<T>& data_vec, const Vector<T>& vec,
                            Vector<T>& res) const {
@@ -211,11 +213,12 @@ class CudaGroupBackend {
     dim3 block(TPB);
 
     detail::gradient_kernel_atomic<T, ncomp, Input, ndata, Data, Components...>
-        <<<grid, block>>>(num_elements, data_indices, vec_indices, data_values,
-                          vec_values, res_values);
+        <<<grid, block>>>(num_elements, alpha, data_indices, vec_indices,
+                          data_values, vec_values, res_values);
   }
 
-  void add_hessian_product_kernel(const IndexLayout<ndata>& data_layout,
+  void add_hessian_product_kernel(T alpha,
+                                  const IndexLayout<ndata>& data_layout,
                                   const IndexLayout<ncomp>& layout,
                                   const Vector<T>& data_vec,
                                   const Vector<T>& vec, const Vector<T>& dir,
@@ -237,12 +240,12 @@ class CudaGroupBackend {
 
     detail::hessian_product_kernel_atomic<T, ncomp, Input, ndata, Data,
                                           Components...>
-        <<<grid, block>>>(num_elements, data_indices, vec_indices, data_values,
-                          vec_values, dir_values, res_values);
+        <<<grid, block>>>(num_elements, alpha, data_indices, vec_indices,
+                          data_values, vec_values, dir_values, res_values);
   }
 
   // Need to add the hessian...
-  void add_hessian_kernel(const IndexLayout<ndata>& data_layout,
+  void add_hessian_kernel(T alpha, const IndexLayout<ndata>& data_layout,
                           const IndexLayout<ncomp>& layout,
                           const Vector<T>& data_vec, const Vector<T>& vec,
                           const NodeOwners& owners, CSRMat<T>& mat) const {
@@ -263,8 +266,8 @@ class CudaGroupBackend {
     mat.get_device_data(nullptr, nullptr, &csr_data);
 
     detail::hessian_kernel_atomic<T, ncomp, Input, ndata, Data, Components...>
-        <<<grid, block>>>(num_elements, data_indices, vec_indices, d_hess_pos,
-                          data_values, vec_values, csr_data);
+        <<<grid, block>>>(num_elements, alpha, data_indices, vec_indices,
+                          d_hess_pos, data_values, vec_values, csr_data);
   }
 
   void add_grad_jac_product_wrt_data_kernel(

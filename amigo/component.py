@@ -669,7 +669,7 @@ class ConstraintSet:
         if obj_expr is None:
             expr = ""
         else:
-            expr = f"{obj_expr}"
+            expr = f"alpha__ * ({obj_expr})"
 
         if len(expr_list) > 0:
             if obj_expr is None:
@@ -1191,21 +1191,27 @@ class Component:
         pre = "  AMIGO_HOST_DEVICE static"
         if mode == "eval":
             cpp += (
-                f"{pre} {template_name} lagrange(Data<{template_name}>& {data_name}, "
-                + f"Input<{template_name}>& {input_name})"
-                + " {\n"
+                f"{pre} {template_name} lagrange({template_name} alpha__, "
+                + f"Data<{template_name}>& {data_name}, "
+                + f"Input<{template_name}>& {input_name}) "
+                + "{\n"
             )
         elif mode == "rev":
             cpp += (
-                f"{pre} void gradient(Data<{template_name}>& {data_name}, "
-                + f"Input<{template_name}>& {input_name}, Input<{template_name}>& {grad_name})"
+                f"{pre} void gradient({template_name} alpha__, "
+                + f"Data<{template_name}>& {data_name}, "
+                + f"Input<{template_name}>& {input_name}, "
+                + f"Input<{template_name}>& {grad_name})"
                 + " {\n"
             )
         elif mode == "hprod":
             cpp += (
-                f"{pre} void hessian(Data<{template_name}>& {data_name}, "
-                f"Input<{template_name}>& {input_name}, Input<{template_name}>& {prod_name}, "
-                f"Input<{template_name}>& {grad_name}, Input<{template_name}>& {hprod_name})"
+                f"{pre} void hessian({template_name} alpha__, "
+                + f"Data<{template_name}>& {data_name}, "
+                + f"Input<{template_name}>& {input_name}, "
+                + f"Input<{template_name}>& {prod_name}, "
+                + f"Input<{template_name}>& {grad_name}, "
+                + f"Input<{template_name}>& {hprod_name})"
                 + " {\n"
             )
 

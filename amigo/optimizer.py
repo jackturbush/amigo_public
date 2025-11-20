@@ -113,13 +113,13 @@ class DirectScipySolver:
         self.lu = None
         return
 
-    def factor(self, x, diag, zero_design_contrib=False):
+    def factor(self, alpha, x, diag):
         """
         Compute and factor the Hessian matrix
         """
 
         # Compute the Hessian
-        self.problem.hessian(x, self.hess, zero_design_contrib=zero_design_contrib)
+        self.problem.hessian(alpha, x, self.hess)
         self.hess.add_diagonal(diag)
 
         # Build the CSR matrix and convert to CSC
@@ -141,11 +141,11 @@ class DirectScipySolver:
 
         return
 
-    def compute_eigenvalues(self, x, diag=None, k=20, sigma=0.0, which="LM"):
+    def compute_eigenvalues(self, alpha, x, diag=None, k=20, sigma=0.0, which="LM"):
         """
         Compute the eigenvalues and eigenvectors
         """
-        self.problem.hessian(x, self.hess, zero_design_contrib=False)
+        self.problem.hessian(alpha, x, self.hess)
         if diag is not None:
             self.hess.add_diagonal(diag)
 
@@ -194,10 +194,10 @@ class LNKSInexactSolver:
 
         return
 
-    def factor(self, x, diag, zero_design_contrib=False):
+    def factor(self, alpha, x, diag):
 
         # Compute the Hessian
-        self.problem.hessian(x, self.hess, zero_design_contrib=zero_design_contrib)
+        self.problem.hessian(alpha, x, self.hess)
         self.hess.add_diagonal(diag)
 
         # Extract the submatrices
@@ -261,9 +261,9 @@ class DirectPetscSolver:
 
         return
 
-    def factor(self, x, diag):
+    def factor(self, alpha, x, diag):
         # Compute the Hessian
-        self.mpi_problem.hessian(x, self.hess)
+        self.mpi_problem.hessian(alpha, x, self.hess)
         self.hess.add_diagonal(diag)
 
         # Extract the Hessian entries
@@ -524,7 +524,12 @@ class Optimizer:
 
         # Find the solution values
         x = self.vars.get_solution()
-        self.solver.factor(x, self.diag, zero_design_contrib=True)
+        xt = self.grad
+        xt.get_array()[:] = x.get_array()[:]
+        xt.get_array()[is_mult_array != 0.0] = 0.0
+
+        # Set alpha = 0.0 so that the only contributions are from constraints
+        self.solver.factor(0.0, xt, self.diag)
         self.solver.solve(self.res, self.px)
 
         # Update the multiplier values
@@ -541,9 +546,9 @@ class Optimizer:
         # Compute the gradient at the new point with the updated multipliers
         x = self.vars.get_solution()
         if self.distribute:
-            self.mpi_problem.gradient(x, self.grad)
+            self.mpi_problem.gradient(1.0, x, self.grad)
         else:
-            self.problem.gradient(x, self.grad)
+            self.problem.gradient(1.0, x, self.grad)
 
         # Compute the residual
         mu = 0.0
@@ -555,7 +560,7 @@ class Optimizer:
         self.optimizer.compute_diagonal(self.vars, self.diag)
 
         # Solve the KKT system
-        self.solver.factor(x, self.diag)
+        self.solver.factor(1.0, x, self.diag)
         self.solver.solve(self.res, self.px)
 
         # Compute the full update based on the reduced variable update
@@ -644,10 +649,10 @@ class Optimizer:
         # Compute the gradient
         if self.distribute:
             self.mpi_problem.update(x)
-            self.mpi_problem.gradient(x, self.grad)
+            self.mpi_problem.gradient(1.0, x, self.grad)
         else:
             self.problem.update(x)
-            self.problem.gradient(x, self.grad)
+            self.problem.gradient(1.0, x, self.grad)
 
         # Set the initial point and slack variable
         self.optimizer.initialize_multipliers_and_slacks(
@@ -669,10 +674,10 @@ class Optimizer:
         # Compute the gradient
         if self.distribute:
             self.mpi_problem.update(x)
-            self.mpi_problem.gradient(x, self.grad)
+            self.mpi_problem.gradient(1.0, x, self.grad)
         else:
             self.problem.update(x)
-            self.problem.gradient(x, self.grad)
+            self.problem.gradient(1.0, x, self.grad)
 
         line_iters = 0
         alpha_x_prev = 0.0
@@ -774,7 +779,7 @@ class Optimizer:
             self.optimizer.compute_diagonal(self.vars, self.diag)
 
             # Solve the KKT system with the computed diagonal entries
-            self.solver.factor(x, self.diag)
+            self.solver.factor(1.0, x, self.diag)
             self.solver.solve(self.res, self.px)
 
             # Compute the full update based on the reduced variable update
@@ -825,10 +830,10 @@ class Optimizer:
                 xt = self.temp.get_solution()
                 if self.distribute:
                     self.mpi_problem.update(xt)
-                    self.mpi_problem.gradient(xt, self.grad)
+                    self.mpi_problem.gradient(1.0, xt, self.grad)
                 else:
                     self.problem.update(xt)
-                    self.problem.gradient(xt, self.grad)
+                    self.problem.gradient(1.0, xt, self.grad)
 
                 # Compute the residual at the perturbed point
                 res_norm_new = self.optimizer.compute_residual(
@@ -911,7 +916,7 @@ class Optimizer:
         self.optimizer.compute_diagonal(self.vars, self.diag)
 
         # Factor the KKT system
-        self.solver.factor(x, self.diag)
+        self.solver.factor(1.0, x, self.diag)
 
         if method == "adjoint":
             for i in range(len(of_indices)):

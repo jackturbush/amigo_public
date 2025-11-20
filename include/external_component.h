@@ -152,7 +152,7 @@ class ExternalComponentGroup : public ComponentGroupBase<T, policy> {
   }
 
   // Compute the Lagrangian
-  T lagrangian(const Vector<T>& data, const Vector<T>& x) const {
+  T lagrangian(T alpha, const Vector<T>& data, const Vector<T>& x) const {
     T value = extrn->get_objective();
     const Vector<T>& constraints = *extrn->get_constraints();
 
@@ -174,7 +174,7 @@ class ExternalComponentGroup : public ComponentGroupBase<T, policy> {
    * @param x (not used)
    * @param g The gradient of the lagrangian
    */
-  void add_gradient(const Vector<T>& data, const Vector<T>& x,
+  void add_gradient(T alpha, const Vector<T>& data, const Vector<T>& x,
                     Vector<T>& g) const {
     const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
     const Vector<T>& constraints = *extrn->get_constraints();
@@ -208,7 +208,7 @@ class ExternalComponentGroup : public ComponentGroupBase<T, policy> {
    * @param p The input direction
    * @param h The output Hessian-vector product
    */
-  void add_hessian_product(const Vector<T>& data, const Vector<T>& x,
+  void add_hessian_product(T alpha, const Vector<T>& data, const Vector<T>& x,
                            const Vector<T>& p, Vector<T>& h) const {
     const int* var_idx = var_indices->get_array();
     const int* con_idx = con_indices->get_array();
@@ -259,7 +259,7 @@ class ExternalComponentGroup : public ComponentGroupBase<T, policy> {
    * @param owners (not used)
    * @param mat The terms added to the Hessian matrix
    */
-  void add_hessian(const Vector<T>& data, const Vector<T>& x,
+  void add_hessian(T alpha, const Vector<T>& data, const Vector<T>& x,
                    const NodeOwners& owners, CSRMat<T>& mat) const {
     // Add the contributions to the Hessian matrix...
     const std::shared_ptr<CSRMat<T>> jacobian = extrn->get_jacobian();
