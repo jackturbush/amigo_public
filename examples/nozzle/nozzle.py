@@ -527,6 +527,13 @@ parser.add_argument(
     default=False,
     help="Enable the Largrange-Newton-Krylov-Schur inexact solver",
 )
+parser.add_argument(
+    "--with-cuda",
+    dest="use_cuda",
+    action="store_true",
+    default=False,
+    help="Enable the CUDA solver",
+)
 
 args = parser.parse_args()
 
@@ -749,7 +756,8 @@ if args.use_lnks:
         residuals=residuals,
     )
 
-solver = am.DirectCudaSolver(model.get_problem())
+if args.use_cuda:
+    solver = am.DirectCudaSolver(model.get_problem())
 
 # Set up the optimizer
 opt = am.Optimizer(model, x, lower=lower, upper=upper, solver=solver)

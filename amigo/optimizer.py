@@ -130,7 +130,8 @@ class DirectCudaSolver:
 class DirectScipySolver:
     def __init__(self, problem):
         self.problem = problem
-        self.hess = self.problem.create_matrix()
+        loc = MemoryLocation.HOST_AND_DEVICE
+        self.hess = self.problem.create_matrix(loc)
         self.nrows, self.ncols, self.nnz, self.rowp, self.cols = (
             self.hess.get_nonzero_structure()
         )
@@ -145,10 +146,10 @@ class DirectScipySolver:
 
         # Compute the Hessian and add the diagonal values
         self.problem.hessian(alpha, x, self.hess)
-        self.hess.add_diagonal(diag)
 
-        # Copy to the host if needed
         self.hess.copy_data_device_to_host()
+        diag.copy_device_to_host()
+        self.hess.add_diagonal(diag)
 
         # Build the CSR matrix and convert to CSC
         shape = (self.nrows, self.ncols)
@@ -166,7 +167,6 @@ class DirectScipySolver:
         """
 
         bx.copy_device_to_host()
-        print(np.linalg.norm(bx.get_array()))
         px.get_array()[:] = self.lu.solve(bx.get_array())
         px.copy_host_to_device()
 
@@ -423,11 +423,17 @@ class Optimizer:
             self.optimizer = InteriorPointOptimizer(
                 self.mpi_problem, self.mpi_lower, self.mpi_upper
             )
+            data_vec = self.mpi_problem.get_data_vector()
         else:
             x_vec = self.x
             self.optimizer = InteriorPointOptimizer(
                 self.problem, self.lower, self.upper
             )
+            data_vec = self.problem.get_data_vector()
+
+        # Copy the essential information from host to device
+        x_vec.copy_host_to_device()
+        data_vec.copy_host_to_device()
 
         # Create data that will be used in conjunction with the optimizer
         self.vars = self.optimizer.create_opt_vector(x_vec)
@@ -668,7 +674,6 @@ class Optimizer:
 
         # Initialize the multipliers
         if options["init_affine_step_multipliers"]:
-            print("Computing least squares multipliers")
             self._compute_least_squares_multipliers()
 
             # Compute the affine step multipliers and the new barrier parameter
