@@ -21,10 +21,12 @@ class SerialCSRMatBackend {
   ~SerialCSRMatBackend() {}
 
   void allocate(int nrows_, int ncols_, int nnz_) {}
-  void copy_pattern_host_to_device(const int* rowp, const int* cols) {}
+  void copy_pattern_host_to_device(const int* rowp, const int* cols,
+                                   const int* diag) {}
   void copy_data_device_to_host(T* data) {}
   void copy_data_device_to_host(int ext_offset, int ext_size, T* ext_data) {}
   void zero() {}
+  void add_diagonal(const T* values) {}
   void get_device_data(const int* rowp[], const int* cols[], T* data[]) {
     if (rowp) {
       *rowp = nullptr;
