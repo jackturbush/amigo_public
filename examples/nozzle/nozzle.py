@@ -13,7 +13,6 @@ class RoeFlux(am.Component):
         super().__init__()
 
         # Add the constants
-        self.add_constant("gamma", value=gamma)
         self.add_constant("gam1", value=(gamma - 1.0))
         self.add_constant("ggam1", value=gamma / (gamma - 1.0))
 
@@ -494,6 +493,13 @@ parser.add_argument(
     "--build", dest="build", action="store_true", default=False, help="Enable building"
 )
 parser.add_argument(
+    "--generate",
+    dest="generate",
+    action="store_true",
+    default=False,
+    help="Generate the code",
+)
+parser.add_argument(
     "--with-openmp",
     dest="use_openmp",
     action="store_true",
@@ -520,6 +526,13 @@ parser.add_argument(
     action="store_true",
     default=False,
     help="Enable the Largrange-Newton-Krylov-Schur inexact solver",
+)
+parser.add_argument(
+    "--with-cuda",
+    dest="use_cuda",
+    action="store_true",
+    default=False,
+    help="Enable the CUDA solver",
 )
 
 args = parser.parse_args()
@@ -561,7 +574,7 @@ p_outlet = p_back
 nctrl = 10
 
 # Create the model
-model = am.Model("nozzle")
+model = am.Model("nozzle_module")
 
 # Add the flux computations at the interior points
 model.add_component("flux", num_cells - 1, RoeFlux(gamma=gamma))
@@ -632,7 +645,11 @@ model.link("area.output[0]", "calc.A_inlet")
 model.link("area.output[-1]", "calc.A_outlet")
 model.link("inlet.M_inlet", "calc.M_inlet")
 
-if args.build:
+if args.generate:
+    model.generate_cpp()
+    exit(0)
+
+elif args.build:
     compile_args = []
     link_args = []
     define_macros = []
@@ -738,6 +755,9 @@ if args.use_lnks:
         state_vars=state_vars,
         residuals=residuals,
     )
+
+if args.use_cuda:
+    solver = am.DirectCudaSolver(model.get_problem())
 
 # Set up the optimizer
 opt = am.Optimizer(model, x, lower=lower, upper=upper, solver=solver)
