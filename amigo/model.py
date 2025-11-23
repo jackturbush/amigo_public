@@ -1081,7 +1081,11 @@ class Model:
 cmake_minimum_required(VERSION 3.25)
 project({self.module_name} LANGUAGES CXX)
 
-find_package(Amigo REQUIRED CONFIG)
+find_package(amigo REQUIRED CONFIG)
+
+if(AMIGO_ENABLE_CUDA)
+    enable_language(CUDA) 
+endif()
 
 amigo_add_python_module(
     NAME {self.module_name}
@@ -1092,19 +1096,28 @@ amigo_add_python_module(
 
         # Locate the installed Amigo CMake package inside the Python package
         amigo_cmake_dir = get_cmake_dir()
+        print("amigo_cmake_dir = ", amigo_cmake_dir)
+
+        # Cmake command
+        cmake_cmd = [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={amigo_cmake_dir}",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-Dpybind11_DIR={cmake_pybind11_dir}",
+        ]
+        build_cmd = ["cmake", "--build", str(build_dir), "--config", "Release"]
+
+        print("Running CMake commands from amigo")
+        print(" ".join(cmake_cmd))
+        print(" ".join(build_cmd))
 
         # Configure
         p = subprocess.Popen(
-            [
-                "cmake",
-                "-S",
-                str(source_dir),
-                "-B",
-                str(build_dir),
-                f"-DCMAKE_PREFIX_PATH={amigo_cmake_dir}",
-                f"-DPython3_EXECUTABLE={sys.executable}",
-                f"-Dpybind11_DIR={cmake_pybind11_dir}",
-            ],
+            cmake_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -1118,7 +1131,7 @@ amigo_add_python_module(
 
         # Build
         p = subprocess.Popen(
-            ["cmake", "--build", str(build_dir), "--config", "Release"],
+            build_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

@@ -130,6 +130,8 @@ if(AMIGO_ENABLE_CUDA)
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 
+  target_link_libraries(backend PUBLIC headers)
+
   target_link_libraries(amigo PRIVATE backend)
 endif()
 
@@ -155,7 +157,7 @@ install(TARGETS amigo
 
 # Always export the header-only interface
 install(TARGETS headers
-  EXPORT AmigoTargets 
+  EXPORT amigoTargets 
   DESTINATION "${AMIGO_PY_PACKAGE_DIR}"
 )
 
@@ -163,27 +165,27 @@ install(TARGETS headers
 if(AMIGO_ENABLE_CUDA)
   add_library(amigo::backend ALIAS backend)
   install(TARGETS backend
-    EXPORT AmigoTargets
+    EXPORT amigoTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
   )
 endif()
 
 # Export file with imported targets (amigo::headers, amigo::backend)
-install(EXPORT AmigoTargets
+install(EXPORT amigoTargets
     NAMESPACE amigo::
-    FILE AmigoTargets.cmake
+    FILE amigoTargets.cmake
     DESTINATION "${AMIGO_PY_PACKAGE_DIR}/cmake/amigo"
 )
 
 configure_package_config_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/AmigoConfig.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/AmigoConfig.cmake
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/amigoConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/amigoConfig.cmake
   INSTALL_DESTINATION "${AMIGO_PY_PACKAGE_DIR}/cmake/amigo"
 )
 
 install(FILES
-  ${CMAKE_CURRENT_BINARY_DIR}/AmigoConfig.cmake
-  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/AmigoAddModule.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/amigoConfig.cmake
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/amigoAddModule.cmake
   DESTINATION "${AMIGO_PY_PACKAGE_DIR}/cmake/amigo"
 )

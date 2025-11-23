@@ -16,6 +16,18 @@ function(amigo_add_python_module)
     message(FATAL_ERROR "amigo_add_python_module: SOURCES is required")
   endif()
 
+  if(AMIGO_ENABLE_CUDA)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+      set(CMAKE_CUDA_ARCHITECTURES 80)
+    endif()
+  endif()
+
+  if(AMIGO_ENABLE_OPENMP)
+    find_package(OpenMP)
+  endif()
+
   find_package(amigo REQUIRED CONFIG)
   find_package(Python3 REQUIRED COMPONENTS Development.Module)
   find_package(pybind11 REQUIRED CONFIG)
@@ -35,6 +47,10 @@ function(amigo_add_python_module)
   # If the CUDA backend was built for this amigo install, link to it too
   if(TARGET amigo::backend)
     target_link_libraries(${AMIGO_NAME} PRIVATE amigo::backend)
+  endif()
+
+  if(AMIGO_ENABLE_CUDA)
+    set_source_files_properties(${AMIGO_NAME} PROPERTIES LANGUAGE CUDA)
   endif()
 
   # No 'lib' prefix
