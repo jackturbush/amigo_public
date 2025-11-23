@@ -972,7 +972,6 @@ class Model:
         comm=COMM_WORLD,
         source_dir: str | Path | None = None,
         build_dir: str | Path | None = None,
-        **kwargs,
     ):
         """
         Generate the model code and build it. Additional compile, link arguments and macros can be added here.
