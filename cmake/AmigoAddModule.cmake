@@ -1,0 +1,44 @@
+function(amigo_add_python_module)
+  # Usage:
+  #   amigo_add_python_module(NAME cart SOURCES cart.cpp)
+
+  cmake_parse_arguments(AMIGO
+    ""
+    "NAME"
+    "SOURCES"
+    ${ARGN}
+  )
+
+  if(NOT AMIGO_NAME)
+    message(FATAL_ERROR "amigo_add_python_module: NAME is required")
+  endif()
+  if(NOT AMIGO_SOURCES)
+    message(FATAL_ERROR "amigo_add_python_module: SOURCES is required")
+  endif()
+
+  find_package(Amigo REQUIRED CONFIG)
+  find_package(Python3 REQUIRED COMPONENTS Development.Module)
+  find_package(pybind11 REQUIRED CONFIG)
+
+  pybind11_add_module(${AMIGO_NAME} MODULE ${AMIGO_SOURCES})
+  set_target_properties(${AMIGO_NAME} PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+
+  # Always use headers
+  target_link_libraries(${AMIGO_NAME} PRIVATE amigo::headers)
+
+  # If the CUDA backend was built for this Amigo install, link to it too
+  if(TARGET amigo::backend)
+    target_link_libraries(${AMIGO_NAME} PRIVATE amigo::backend)
+  endif()
+
+  # No 'lib' prefix
+  set_target_properties(${AMIGO_NAME} PROPERTIES PREFIX "")
+
+  # Put module right next to the generated .cpp / python file
+  set_target_properties(${AMIGO_NAME} PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+endfunction()

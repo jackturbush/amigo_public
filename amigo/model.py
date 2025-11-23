@@ -1047,7 +1047,62 @@ class Model:
 
         return
 
-    def _build_module(
+    def _build_module(self, **kwargs):
+
+        source_dir = Path(source_dir).resolve()
+        if build_dir is None:
+            build_dir = source_dir / "_amigo_build"
+        build_dir = build_dir.resolve()
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        # Optionally drop a trivial CMakeLists.txt into the source_dir
+        cmakelists = source_dir / "CMakeLists.txt"
+        if generate_cmakelists and not cmakelists.exists():
+            cmakelists.write_text(
+                f"""\
+cmake_minimum_required(VERSION 3.25)
+project({self.module_name} LANGUAGES CXX)
+
+find_package(Amigo REQUIRED CONFIG)
+
+amigo_add_python_module(
+    NAME {self.module_name}
+    SOURCES {self.module_name}.cpp
+)
+"""
+            )
+
+        # Locate the installed Amigo CMake package inside the Python package
+        amigo_cmake_dir = files("amigo") / "cmake" / "Amigo"
+
+        # Configure
+        subprocess.check_call(
+            [
+                "cmake",
+                "-S",
+                str(source_dir),
+                "-B",
+                str(build_dir),
+                f"-DCMAKE_PREFIX_PATH={amigo_cmake_dir}",
+                f"-DPython3_EXECUTABLE={sys.executable}",
+            ]
+        )
+
+        # Build
+        subprocess.check_call(
+            ["cmake", "--build", str(build_dir), "--config", "Release"]
+        )
+
+        # amigo_add_python_module drops the .so in source_dir
+        for p in source_dir.iterdir():
+            if p.stem == name and p.suffix in {".so", ".pyd", ".dll", ".dylib"}:
+                return p
+
+        raise RuntimeError(f"Could not find built module {name} in {source_dir}")
+
+        return
+
+    def _build_module_setuptools(
         self, compile_args=[], link_args=[], define_macros=[], debug=False
     ):
         """
