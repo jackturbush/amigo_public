@@ -23,6 +23,7 @@ include/amigo_include_paths.h
 /examples/**/build/
 /examples/**/lib/
 /examples/**/*.txt
+/examples/**/_amigo_build/
 
 # Virtual environments and packaging
 venv/

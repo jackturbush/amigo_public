@@ -453,13 +453,11 @@ opt_options = {
     "convergence_tolerance": 1e-10,
     "max_line_search_iterations": 4,  # 30,  # Reasonable for intermediate problem
     "max_iterations": 500,  # Sufficient iterations
-    "init_affine_step_multipliers": True,  # Enable for better scaling
+    # "init_affine_step_multipliers": True,  # Enable for better scaling
     # Use the new heuristic barrier parameter update
     # "barrier_strategy": "heuristic",
     # "verbose_barrier": True,  # Show ξ and complementarity values
 }
-
-exit(0)
 
 # Set up the optimizer
 opt = am.Optimizer(model, x, lower=lower, upper=upper, comm=comm, distribute=distribute)
