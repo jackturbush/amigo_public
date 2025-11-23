@@ -6,6 +6,30 @@ All application code is written in python and automatically compiled to c++. Aut
 
 Integration with other MDO libraries is key for flexibility. Amigo contains interfaces to inject OpenMDAO models into Amigo models using `amigo.ExternalComponent`. Alternatively, Amigo can be used as a sub-optimization OpenMDAO component with accurate post-optimality derivatives.
 
+## Installing amigo
+
+Amigo uses CMake and scikit-build to build the primary amigo module and all model modules that comprise a multidisciplinary model.
+
+To build and install the primary amigo module and it's python wrappers, you can build the module with
+
+```
+pip install -e .
+```
+
+By default the OpenMP and CUDA parallelization are turned off. You can turn on or off these modules with additional command line arguments to pip. To enable CUDA and disable OpenMP, you can use
+
+```
+pip install -e . -v \
+    -Ccmake.args="-DCMAKE_CXX_COMPILER=mpicxx" \
+    -Ccmake.args="-DAMIGO_ENABLE_OPENMP=OFF" \
+    -Ccmake.args="-DAMIGO_ENABLE_CUDA=ON" \
+    -Ccmake.args="-DCMAKE_CUDA_ARCHITECTURES=native"
+```
+
+Note that you cannot enable both CUDA and OpenMP at the same time. 
+
+Amigo model modules inherit the build options that are selected during the install phase.
+
 ## Rosenbrock example
 
 Below are two short examples that illustrate some of the features of Amigo.
