@@ -954,11 +954,24 @@ class Model:
 
         return x
 
+    def _guess_source_dir(self):
+        """Make a guess for the source directory"""
+
+        for name in self.comp:
+            cls = self.comp[name].comp_obj
+            module = sys.modules[cls.__module__]
+            source = getattr(module, "__file__", None)
+
+            if source is not None:
+                return Path(source).resolve().parent
+
+        return None
+
     def build_module(
         self,
         comm=COMM_WORLD,
-        source_dir=None,
-        build_dir=None,
+        source_dir: str | Path | None = None,
+        build_dir: str | Path | None = None,
         **kwargs,
     ):
         """
@@ -970,6 +983,9 @@ class Model:
             comm_rank = comm.rank
 
         if comm_rank == 0:
+            if source_dir is None:
+                source_dir = self._guess_source_dir()
+
             self.generate_cpp()
             self._build_module(source_dir=source_dir, build_dir=build_dir)
 
