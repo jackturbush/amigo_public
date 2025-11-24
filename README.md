@@ -10,7 +10,7 @@ Integration with other MDO libraries is key for flexibility. Amigo contains inte
 
 Amigo uses CMake and scikit-build to build the primary amigo module and all model modules that comprise a multidisciplinary model.
 
-To build and install the primary amigo module and it's python wrappers, you can build the module with
+To build and install the primary amigo module and its python wrappers, you can build the module with
 
 ```
 pip install -e .
