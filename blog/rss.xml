@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+    <channel>
+        <title>Amigo Blog</title>
+        <link>https://smdogroup.github.io/amigo/blog</link>
+        <description>Amigo Blog</description>
+        <lastBuildDate>Mon, 01 Jan 2024 00:00:00 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>https://github.com/jpmonette/feed</generator>
+        <language>en</language>
+        <item>
+            <title><![CDATA[Welcome to Amigo Documentation]]></title>
+            <link>https://smdogroup.github.io/amigo/blog/welcome</link>
+            <guid>https://smdogroup.github.io/amigo/blog/welcome</guid>
+            <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[We're excited to launch the official Amigo documentation site. Here you'll find tutorials, API references, and examples to help you get started with multidisciplinary design optimization on HPC systems.]]></description>
+            <content:encoded><![CDATA[<p>We're excited to launch the official Amigo documentation site. Here you'll find tutorials, API references, and examples to help you get started with multidisciplinary design optimization on HPC systems.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="whats-available">What's Available<a href="https://smdogroup.github.io/amigo/blog/welcome#whats-available" class="hash-link" aria-label="Direct link to What's Available" title="Direct link to What's Available" translate="no">​</a></h2>
+<ul>
+<li class="">Complete getting started guide</li>
+<li class="">API documentation for all core modules</li>
+<li class="">Cart Pole optimal control tutorial</li>
+<li class="">Brachistochrone problem example</li>
+<li class="">Comprehensive API reference</li>
+</ul>
+<p>Check out the <a class="" href="https://smdogroup.github.io/amigo/docs/getting-started/introduction.md">Getting Started</a> guide to begin using Amigo!</p>]]></content:encoded>
+            <category>amigo</category>
+            <category>documentation</category>
+            <category>optimization</category>
+        </item>
+    </channel>
+</rss>

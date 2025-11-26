@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://smdogroup.github.io/amigo/blog</id>
+    <title>Amigo Blog</title>
+    <updated>2024-01-01T00:00:00.000Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://smdogroup.github.io/amigo/blog"/>
+    <subtitle>Amigo Blog</subtitle>
+    <icon>https://smdogroup.github.io/amigo/img/favicon.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcome to Amigo Documentation]]></title>
+        <id>https://smdogroup.github.io/amigo/blog/welcome</id>
+        <link href="https://smdogroup.github.io/amigo/blog/welcome"/>
+        <updated>2024-01-01T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[We're excited to launch the official Amigo documentation site. Here you'll find tutorials, API references, and examples to help you get started with multidisciplinary design optimization on HPC systems.]]></summary>
+        <content type="html"><![CDATA[<p>We're excited to launch the official Amigo documentation site. Here you'll find tutorials, API references, and examples to help you get started with multidisciplinary design optimization on HPC systems.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="whats-available">What's Available<a href="https://smdogroup.github.io/amigo/blog/welcome#whats-available" class="hash-link" aria-label="Direct link to What's Available" title="Direct link to What's Available" translate="no">​</a></h2>
+<ul>
+<li class="">Complete getting started guide</li>
+<li class="">API documentation for all core modules</li>
+<li class="">Cart Pole optimal control tutorial</li>
+<li class="">Brachistochrone problem example</li>
+<li class="">Comprehensive API reference</li>
+</ul>
+<p>Check out the <a class="" href="https://smdogroup.github.io/amigo/docs/getting-started/introduction.md">Getting Started</a> guide to begin using Amigo!</p>]]></content>
+        <category label="amigo" term="amigo"/>
+        <category label="documentation" term="documentation"/>
+        <category label="optimization" term="optimization"/>
+    </entry>
+</feed>
