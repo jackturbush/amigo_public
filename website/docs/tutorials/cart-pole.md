@@ -464,7 +464,7 @@ The interactive graph displays:
 
 <div style={{textAlign: 'center', margin: '1rem 0'}}>
   <iframe 
-    src={require('./cart_pole_graph.html').default}
+    src={/img/cart_pole_graph.html}
     width="100%" 
     height="800" 
     style={{border: 'none'}}
