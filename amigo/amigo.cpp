@@ -345,9 +345,9 @@ PYBIND11_MODULE(amigo, mod) {
              amigo::ComponentGroupBase<double, policy>,
              std::shared_ptr<amigo::ExternalComponentGroup<double, policy>>>(
       mod, "ExternalComponentGroup")
-      .def(py::init([](py::array_t<int> vars, py::array_t<int> cons,
-                       py::array_t<int> rowp, py::array_t<int> cols,
-                       py::object cb) {
+      .def(py::init([policy](py::array_t<int> vars, py::array_t<int> cons,
+                             py::array_t<int> rowp, py::array_t<int> cols,
+                             py::object cb) {
         std::shared_ptr<PyExternalCallback<double>> extrn =
             std::make_shared<PyExternalCallback<double>>(
                 vars.size(), cons.size(), rowp.data(), cols.data(), cb);
@@ -388,12 +388,13 @@ PYBIND11_MODULE(amigo, mod) {
              std::shared_ptr<amigo::OptimizationProblem<double, policy>>>(
       mod, "OptimizationProblem")
       .def(py::init(
-          [](py::object pyobj, std::shared_ptr<amigo::NodeOwners> data_owners,
-             std::shared_ptr<amigo::NodeOwners> var_owners,
-             std::shared_ptr<amigo::NodeOwners> output_owners,
-             std::shared_ptr<amigo::Vector<int>> is_multiplier,
-             const std::vector<std::shared_ptr<
-                 amigo::ComponentGroupBase<double, policy>>>& components) {
+          [policy](
+              py::object pyobj, std::shared_ptr<amigo::NodeOwners> data_owners,
+              std::shared_ptr<amigo::NodeOwners> var_owners,
+              std::shared_ptr<amigo::NodeOwners> output_owners,
+              std::shared_ptr<amigo::Vector<int>> is_multiplier,
+              const std::vector<std::shared_ptr<
+                  amigo::ComponentGroupBase<double, policy>>>& components) {
             MPI_Comm comm = MPI_COMM_SELF;
             if (!pyobj.is_none()) {
               comm = *PyMPIComm_Get(pyobj.ptr());
