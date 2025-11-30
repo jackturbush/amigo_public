@@ -79,13 +79,17 @@ class CartComponent(am.Component):
         cost = self.vars["cost"] = am.cos(q[1])
 
         res = 4 * [None]
+        # Kinematic constraints
         res[0] = q[2] - qdot[0]
         res[1] = q[3] - qdot[1]
-        res[2] = (m1 + m2 * (1.0 - cost * cost)) * qdot[2] - (
-            L0 * m2 * sint * q[3] * q[3] * x + m2 * g * cost * sint
+
+        res[2] = (m1 + m2 * sint * sint) * qdot[2] - (
+            x + m2 * L0 * sint * q[3] * q[3] + m2 * g * cost * sint
         )
-        res[3] = L0 * (m1 + m2 * (1.0 - cost * cost)) * qdot[3] + (
-            L0 * m2 * cost * sint * q[3] * q[3] + x * cost + (m1 + m2) * g * sint
+
+        # Pole acceleration:
+        res[3] = L0 * (m1 + m2 * sint * sint) * qdot[3] - (
+            -x * cost - m2 * L0 * cost * sint * q[3] * q[3] - (m1 + m2) * g * sint
         )
 
         self.constraints["res"] = res
@@ -132,7 +136,7 @@ class Objective(am.Component):
         x1 = self.inputs["x1"]
         x2 = self.inputs["x2"]
 
-        self.objective["obj"] = (x1 * x1 + x2 * x2) / 2
+        self.objective["obj"] = (x1**2 + x2**2) / 2
 
         return
 
@@ -548,6 +552,15 @@ opt_data = opt.optimize(opt_options)
 
 # Copy the solution from the device to host
 x.get_vector().copy_device_to_host()
+
+# Print objective value
+u = x["cart.x[:]"]  # control force at each timestep
+obj_value = 0.0
+dt = final_time / num_time_steps
+for i in range(num_time_steps):
+    obj_value += (u[i] ** 2 + u[i + 1] ** 2) / 2 * dt
+
+print(obj_value)
 
 with open("cart_opt_data.json", "w") as fp:
     json.dump(opt_data, fp, indent=2)
