@@ -1112,14 +1112,14 @@ amigo_add_python_module(
 
         # Build CMAKE_PREFIX_PATH to include amigo cmake dir and venv Library (for MKL on Windows)
         cmake_prefix_paths = [str(amigo_cmake_dir)]
-        
+
         if sys.platform == "win32":
             venv_library = Path(sys.prefix) / "Library"
             if venv_library.exists():
                 cmake_prefix_paths.append(str(venv_library))
-        
+
         cmake_prefix_path_str = ";".join(cmake_prefix_paths)
-        
+
         # Cmake command
         cmake_cmd = [
             "cmake",
@@ -1131,7 +1131,7 @@ amigo_add_python_module(
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-Dpybind11_DIR={cmake_pybind11_dir}",
         ]
-        
+
         # Add explicit MKL and MS-MPI hints for Windows
         if sys.platform == "win32":
             venv_library = Path(sys.prefix) / "Library"
@@ -1141,13 +1141,14 @@ amigo_add_python_module(
                     cmake_cmd.append(f"-DBLAS_LIBRARIES={mkl_lib}")
                     cmake_cmd.append(f"-DLAPACK_LIBRARIES={mkl_lib}")
                     cmake_cmd.append("-DBLA_VENDOR=Intel10_64lp")
-            
+
             # Add MS-MPI hints
             import os
+
             msmpi_sdk = Path(r"C:\Program Files (x86)\Microsoft SDKs\MPI")
             msmpi_include = msmpi_sdk / "Include"
             msmpi_lib = msmpi_sdk / "Lib" / "x64" / "msmpi.lib"
-            
+
             if msmpi_include.exists() and msmpi_lib.exists():
                 cmake_cmd.append(f"-DMPI_CXX_INCLUDE_PATH={msmpi_include}")
                 cmake_cmd.append(f"-DMPI_CXX_LIBRARIES={msmpi_lib}")
