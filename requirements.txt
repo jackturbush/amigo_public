@@ -1,20 +1,6 @@
-# Core dependencies
-numpy
-scipy
-matplotlib
-niceplots
-networkx
-pyvis
-
-# Build system requirements
+# Build system (needed before pip install can run)
 scikit-build-core>=0.7
-pybind11>=2.12
-mpi4py>=3.1
 
-# BLAS/LAPACK (recommended for Windows, optional for Linux/Mac)
+# BLAS/LAPACK implementation (required on Windows, optional on Linux/Mac with system BLAS)
 mkl>=2021.0
 mkl-devel>=2021.0
-
-# Development tools
-black>=25.1.0
-pre-commit>=3.5.0
