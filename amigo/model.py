@@ -1085,6 +1085,14 @@ class Model:
 cmake_minimum_required(VERSION 3.25)
 project({self.module_name} LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Enable alternative operator keywords (and, or, not) for MSVC
+if(MSVC)
+  add_compile_options(/permissive-)
+endif()
+
 find_package(amigo REQUIRED CONFIG)
 
 if(AMIGO_ENABLE_CUDA)
@@ -1102,6 +1110,16 @@ amigo_add_python_module(
         amigo_cmake_dir = get_cmake_dir()
         print("amigo_cmake_dir = ", amigo_cmake_dir)
 
+        # Build CMAKE_PREFIX_PATH to include amigo cmake dir and venv Library (for MKL on Windows)
+        cmake_prefix_paths = [str(amigo_cmake_dir)]
+        
+        if sys.platform == "win32":
+            venv_library = Path(sys.prefix) / "Library"
+            if venv_library.exists():
+                cmake_prefix_paths.append(str(venv_library))
+        
+        cmake_prefix_path_str = ";".join(cmake_prefix_paths)
+        
         # Cmake command
         cmake_cmd = [
             "cmake",
@@ -1109,10 +1127,30 @@ amigo_add_python_module(
             str(source_dir),
             "-B",
             str(build_dir),
-            f"-DCMAKE_PREFIX_PATH={amigo_cmake_dir}",
+            f"-DCMAKE_PREFIX_PATH={cmake_prefix_path_str}",
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-Dpybind11_DIR={cmake_pybind11_dir}",
         ]
+        
+        # Add explicit MKL and MS-MPI hints for Windows
+        if sys.platform == "win32":
+            venv_library = Path(sys.prefix) / "Library"
+            if venv_library.exists():
+                mkl_lib = venv_library / "lib" / "mkl_rt.lib"
+                if mkl_lib.exists():
+                    cmake_cmd.append(f"-DBLAS_LIBRARIES={mkl_lib}")
+                    cmake_cmd.append(f"-DLAPACK_LIBRARIES={mkl_lib}")
+                    cmake_cmd.append("-DBLA_VENDOR=Intel10_64lp")
+            
+            # Add MS-MPI hints
+            import os
+            msmpi_sdk = Path(r"C:\Program Files (x86)\Microsoft SDKs\MPI")
+            msmpi_include = msmpi_sdk / "Include"
+            msmpi_lib = msmpi_sdk / "Lib" / "x64" / "msmpi.lib"
+            
+            if msmpi_include.exists() and msmpi_lib.exists():
+                cmake_cmd.append(f"-DMPI_CXX_INCLUDE_PATH={msmpi_include}")
+                cmake_cmd.append(f"-DMPI_CXX_LIBRARIES={msmpi_lib}")
         build_cmd = ["cmake", "--build", str(build_dir), "--config", "Release"]
 
         print("Running CMake commands from amigo")

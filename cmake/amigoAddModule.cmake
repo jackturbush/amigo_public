@@ -74,4 +74,12 @@ function(amigo_add_python_module)
   set_target_properties(${AMIGO_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+  
+  # For multi-config generators (Visual Studio, Xcode), also set per-config directories
+  foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${CONFIG} CONFIG_UPPER)
+    set_target_properties(${AMIGO_NAME} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+  endforeach()
 endfunction()
