@@ -119,7 +119,7 @@ The problem is discretized into a finite number of time steps. For each time int
 
 To solve this optimal control problem, we convert the infinite-dimensional continuous problem into a finite-dimensional **nonlinear programming (NLP) problem** using direct collocation. Instead of trying to find continuous functions for the state and control, we discretize time into a finite number of nodes and treat the state and control values at those nodes as optimization variables. 
 
-The dynamics are enforced using the trapezoidal rule, which creates piecewise linear approximations between consecutive nodes. This turns the differential equations into algebraic constraints that the NLP solver can handle. For more details on direct collocation methods, see [1] and [2].
+The dynamics are enforced using the trapezoidal rule, which creates piecewise linear approximations between consecutive nodes. This turns the differential equations into algebraic constraints that the NLP solver can handle. For more details on direct collocation methods, see [<span class="ref-link">[1]</span>](#ref-1) and [<span class="ref-link">[2]</span>](#ref-2).
 
 ### Component 1: Cart Dynamics
 
@@ -693,8 +693,8 @@ plt.show()
 
 ## References
 
-1. Betts, J. T. (2010). *Practical Methods for Optimal Control and Estimation Using Nonlinear Programming* (2nd ed.). SIAM.
+<span id="ref-1">1.</span> Betts, J. T. (2010). *Practical Methods for Optimal Control and Estimation Using Nonlinear Programming* (2nd ed.). SIAM.
 
-2. Kelly, M. (2017). An introduction to trajectory optimization: How to do your own direct collocation. *SIAM Review*, 59(4), 849-904.
+<span id="ref-2">2.</span> Kelly, M. (2017). An introduction to trajectory optimization: How to do your own direct collocation. *SIAM Review*, 59(4), 849-904.
 
-3. Tedrake, R. (2024). *Underactuated Robotics*. MIT OpenCourseWare. Chapter on Cart-Pole systems.
+<span id="ref-3">3.</span> Tedrake, R. (2024). *Underactuated Robotics*. MIT OpenCourseWare. Chapter on Cart-Pole systems.

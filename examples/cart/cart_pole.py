@@ -208,68 +208,77 @@ def plot(d, theta, xctrl):
 
 def plot_for_documentation(x, final_time=2.0, num_time_steps=100):
     """
-    Create documentation-style plots matching control-toolbox format
-    2x2 grid for states, separate panel for control with clean styling
+    Create documentation-style plots showing position, angle, and force
     """
     # Extract solution
     time = np.linspace(0, final_time, num_time_steps + 1)
-    q1 = x["cart.q[:, 0]"]  # Cart position
-    q2 = x["cart.q[:, 1]"]  # Pole angle
-    q1dot = x["cart.q[:, 2]"]  # Cart velocity
-    q2dot = x["cart.q[:, 3]"]  # Angular velocity
-    u = x["cart.x[:]"]  # Control force
+    position = x["cart.q[:, 0]"]  # Cart position
+    angle = x["cart.q[:, 1]"]  # Pole angle
+    force = x["cart.x[:]"]  # Control force
 
-    # Professional blue color
-    blue_color = "#4063D8"
+    # blue color
+    blue_color = "#0072BD"
 
-    # Create figure with more vertical spacing
-    fig = plt.figure(figsize=(14, 11))
+    # Create figure with 3 subplots (2 states + 1 control)
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 9))
 
-    # Add centered main title for states
-    fig.text(0.5, 0.95, "State", ha="center", fontsize=14, fontweight="bold")
+    # Plot every Nth knot point (adjust step to show more/fewer points)
+    knot_step = (
+        5  # Show every 5th knot point (change to 1 for all points, 10 for fewer, etc.)
+    )
 
-    # State variables in 2x2 grid (top 2/3 of figure)
-    ax1 = plt.subplot(3, 2, 1)
-    ax1.plot(time, q1, color=blue_color, linewidth=2.5)
-    ax1.set_ylabel(r"$q_1$ [m]", fontsize=12)
+    # Position plot
+    ax1.plot(time, position, color=blue_color, linewidth=2.5)
+    ax1.plot(
+        time[::knot_step],
+        position[::knot_step],
+        "o",
+        color="black",
+        markersize=5,
+        markerfacecolor="none",
+        markeredgewidth=1,
+    )
+    ax1.set_ylabel("Position (m)", fontsize=12)
     ax1.grid(True, alpha=0.25, linewidth=0.5)
     ax1.tick_params(labelsize=10)
+    ax1.set_title("State", fontsize=14, fontweight="bold", pad=10)
 
-    ax2 = plt.subplot(3, 2, 2)
-    ax2.plot(time, q2, color=blue_color, linewidth=2.5)
-    ax2.set_ylabel(r"$q_2$ [rad]", fontsize=12)
-    ax2.axhline(y=np.pi, color="#888888", linestyle="--", alpha=0.6, linewidth=1.5)
+    # Angle plot
+    ax2.plot(time, angle, color=blue_color, linewidth=2.5)
+    ax2.plot(
+        time[::knot_step],
+        angle[::knot_step],
+        "o",
+        color="black",
+        markersize=5,
+        markerfacecolor="none",
+        markeredgewidth=1,
+    )
+    ax2.set_ylabel("Angle (rad)", fontsize=12)
     ax2.grid(True, alpha=0.25, linewidth=0.5)
     ax2.tick_params(labelsize=10)
 
-    ax3 = plt.subplot(3, 2, 3)
-    ax3.plot(time, q1dot, color=blue_color, linewidth=2.5)
-    ax3.set_ylabel(r"$\dot{q}_1$ [m/s]", fontsize=12)
-    ax3.set_xlabel("Time [s]", fontsize=11)
+    # Force plot (purple color)
+    purple_color = "#8242A2"
+    ax3.plot(time, force, color=purple_color, linewidth=2.5)
+    ax3.plot(
+        time[::knot_step],
+        force[::knot_step],
+        "o",
+        color="black",
+        markersize=5,
+        markerfacecolor="none",
+        markeredgewidth=1,
+    )
+    ax3.set_xlabel("Time (s)", fontsize=11)
+    ax3.set_ylabel("Force (N)", fontsize=12)
     ax3.grid(True, alpha=0.25, linewidth=0.5)
     ax3.tick_params(labelsize=10)
-
-    ax4 = plt.subplot(3, 2, 4)
-    ax4.plot(time, q2dot, color=blue_color, linewidth=2.5)
-    ax4.set_ylabel(r"$\dot{q}_2$ [rad/s]", fontsize=12)
-    ax4.set_xlabel("Time [s]", fontsize=11)
-    ax4.grid(True, alpha=0.25, linewidth=0.5)
-    ax4.tick_params(labelsize=10)
-
-    # Add centered title for control
-    fig.text(0.5, 0.31, "Control", ha="center", fontsize=14, fontweight="bold")
-
-    # Control plot in bottom section
-    ax5 = plt.subplot(3, 1, 3)
-    ax5.plot(time, u, color=blue_color, linewidth=2.5)
-    ax5.set_xlabel("Time [s]", fontsize=11)
-    ax5.set_ylabel(r"$x$ [N]", fontsize=12)
-    ax5.grid(True, alpha=0.25, linewidth=0.5)
-    ax5.tick_params(labelsize=10)
+    ax3.set_title("Control", fontsize=14, fontweight="bold", pad=10)
 
     # Set font for all axes
     fontname = "Helvetica"
-    for ax in [ax1, ax2, ax3, ax4, ax5]:
+    for ax in [ax1, ax2, ax3]:
         ax.xaxis.label.set_fontname(fontname)
         ax.yaxis.label.set_fontname(fontname)
         for tick in ax.get_xticklabels():
@@ -277,7 +286,7 @@ def plot_for_documentation(x, final_time=2.0, num_time_steps=100):
         for tick in ax.get_yticklabels():
             tick.set_fontname(fontname)
 
-    plt.subplots_adjust(top=0.94, bottom=0.06, hspace=0.35, wspace=0.25)
+    plt.tight_layout()
     fig.savefig(
         "cart_pole_solution.png", dpi=300, bbox_inches="tight", facecolor="white"
     )
