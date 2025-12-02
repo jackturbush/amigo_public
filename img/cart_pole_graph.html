@@ -260,6 +260,23 @@
                 }
             }
             
+            // Message handler for cross-origin theme communication
+            let parentTheme = null;
+            
+            window.addEventListener('message', (event) => {
+                // Accept messages from any origin (parent page)
+                if (event.data && event.data.type === 'themeChange') {
+                    const isDark = event.data.theme === 'dark';
+                    parentTheme = event.data.theme;
+                    
+                    if (!manualThemeSet) {
+                        updateThemeUI(isDark);
+                        currentTheme = isDark ? 'dark' : 'light';
+                        updateNodeColors(isDark);
+                    }
+                }
+            });
+            
             function checkDarkMode() {
                 // If user manually set theme, use that
                 if (manualThemeSet) {
@@ -267,8 +284,19 @@
                     return storedTheme === 'dark';
                 }
                 
+                // If in iframe and we received theme from parent via postMessage
+                if (isInIframe && parentTheme) {
+                    const isDark = parentTheme === 'dark';
+                    updateThemeUI(isDark);
+                    if (currentTheme !== parentTheme && typeof network !== 'undefined' && network !== null) {
+                        currentTheme = parentTheme;
+                        updateNodeColors(isDark);
+                    }
+                    return isDark;
+                }
+                
                 try {
-                    // Check parent window's theme (when embedded in iframe)
+                    // Try to check parent window's theme (works in same-origin only)
                     if (isInIframe && window.parent && window.parent.document) {
                         const isDark = window.parent.document.documentElement.getAttribute('data-theme') === 'dark';
                         const newTheme = isDark ? 'dark' : 'light';
@@ -285,7 +313,7 @@
                         return isDark;
                     }
                 } catch (e) {
-                    // Cross-origin or error
+                    // Cross-origin error - wait for postMessage instead
                 }
                 
                 // Standalone mode: check URL parameter first
@@ -310,6 +338,11 @@
                 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                 updateThemeUI(prefersDark);
                 return prefersDark;
+            }
+            
+            // Request initial theme from parent
+            if (isInIframe) {
+                window.parent.postMessage({ type: 'requestTheme' }, '*');
             }
 
             // Function to toggle theme manually
@@ -360,16 +393,16 @@
             const initialDark = checkDarkMode();
             currentTheme = initialDark ? 'dark' : 'light';
 
-            // Listen for theme changes in parent (only if in iframe and not manually set)
+            // For same-origin iframes, poll occasionally as backup
             if (isInIframe) {
                 setInterval(() => {
-                    if (!manualThemeSet) {
+                    if (!manualThemeSet && !parentTheme) {
                         checkDarkMode();
                     }
-                }, 100);
+                }, 500); // Less frequent polling as backup
             }
 
-            // Also listen to system preference changes
+            // Also listen to system preference changes (for standalone mode)
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
                 if (!manualThemeSet && !isInIframe) {
                     const isDark = e.matches;
