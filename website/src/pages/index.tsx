@@ -2,6 +2,7 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
+import styles from './index.module.css';
 
 export default function Home(): JSX.Element {
   const {siteConfig} = useDocusaurusContext();
@@ -9,14 +10,14 @@ export default function Home(): JSX.Element {
     <Layout
       title={`${siteConfig.title}`}
       description="A friendly Python library for multidisciplinary design optimization on high-performance computing resources">
-      <main style={{padding: '4rem 2rem', maxWidth: '1000px', margin: '0 auto'}}>
-        <div style={{marginBottom: '3rem', textAlign: 'center'}}>
-          <Heading as="h1" style={{fontSize: '3rem', fontWeight: '600', marginBottom: '2rem', color: '#1a1a1a'}}>
+      <main className={styles.homeMain}>
+        <div className={styles.titleContainer}>
+          <Heading as="h1" className={styles.title}>
             Amigo
           </Heading>
         </div>
 
-        <div style={{fontSize: '1.05rem', lineHeight: '1.7', color: '#333333', textAlign: 'justify'}}>
+        <div className={styles.contentContainer}>
           <p>
             Amigo is a Python library for solving multidisciplinary analysis and optimization problems on high-performance 
             computing systems through automatically generated C++ wrappers. All application code is written in Python and 
@@ -30,22 +31,14 @@ export default function Home(): JSX.Element {
             post-optimality derivatives.
           </p>
 
-          <Heading as="h2" style={{
-            fontSize: '1.75rem', 
-            fontWeight: '600', 
-            marginTop: '2.5rem', 
-            marginBottom: '1rem', 
-            color: '#1a1a1a',
-            paddingBottom: '0.5rem',
-            borderBottom: '2px solid #e5e7eb'
-          }}>
+          <Heading as="h2" className={styles.sectionTitle}>
             Getting started
           </Heading>
 
           <p>
             To solve your first optimal control problem using <strong>Amigo</strong>, please check the{' '}
-            <Link to="/docs/getting-started/introduction" style={{color: '#4063D8', textDecoration: 'none'}}>documentation</Link>, or simply try our{' '}
-            <Link to="/docs/tutorials/cart-pole" style={{color: '#4063D8', textDecoration: 'none'}}>cart-pole tutorial</Link>.
+            <Link to="/docs/getting-started/introduction" className={styles.link}>documentation</Link>, or simply try our{' '}
+            <Link to="/docs/tutorials/cart-pole" className={styles.link}>cart-pole tutorial</Link>.
           </p>
         </div>
       </main>

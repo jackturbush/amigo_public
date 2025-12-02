@@ -15,7 +15,7 @@
   
   /* Navbar teal color from control-toolbox */
   --ifm-navbar-background-color: #007FA2;
-  --ifm-navbar-link-color: rgba(255, 255, 255, 0.75);
+  --ifm-navbar-link-color: #CFD0CE;
   --ifm-navbar-link-hover-color: rgba(255, 255, 255, 0.95);
 
   /* Secondary colors */
@@ -55,13 +55,185 @@
   --ifm-color-primary-lighter: #9baffc;
   --ifm-color-primary-lightest: #cddbfe;
 
-  --ifm-background-color: #1b1f23;
-  --ifm-background-surface-color: #242930;
+  /* Standard dark mode backgrounds */
+  --ifm-background-color: #18181b;
+  --ifm-background-surface-color: #27272a;
+  
+  /* Standard dark mode text colors */
+  --ifm-font-color-base: #e4e4e7;
+  --ifm-heading-color: #f4f4f5;
   
   /* Keep navbar teal in dark mode too */
   --ifm-navbar-background-color: #007FA2;
   
   --docusaurus-highlighted-code-line-bg: rgba(107, 138, 251, 0.15);
+}
+
+/* Dark mode - Dropdown menu styling */
+[data-theme='dark'] .dropdown__menu {
+  background-color: #3f3f46;
+}
+
+[data-theme='dark'] .dropdown__link {
+  color: #f4f4f5 !important;
+}
+
+[data-theme='dark'] .dropdown__link:hover {
+  background-color: rgba(107, 138, 251, 0.2);
+  color: #6b8afb !important;
+}
+
+/* Dark mode - Sidebar category headings */
+[data-theme='dark'] .menu__list-item-collapsible > .menu__link {
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .menu__list-item-collapsible > .menu__link:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+/* Dark mode - Expanded category background */
+[data-theme='dark'] .theme-doc-sidebar-item-category:not(.menu__list-item--collapsed) {
+  background-color: #3f3f46;
+}
+
+/* Dark mode - Sidebar links */
+[data-theme='dark'] .menu__link {
+  color: #d4d4d8;
+}
+
+[data-theme='dark'] .menu__link:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .menu__link--active {
+  background-color: #52525b;
+  color: #ffffff;
+  border-left: 3px solid #6b8afb;
+}
+
+[data-theme='dark'] .menu__link--active:hover {
+  background-color: #71717a;
+  color: #ffffff;
+}
+
+/* Dark mode - Figure captions */
+[data-theme='dark'] div[align="center"] p strong,
+[data-theme='dark'] p[align="center"] strong {
+  color: #5eead4;
+}
+
+/* Dark mode - Headings */
+[data-theme='dark'] .markdown h1 {
+  color: #5eead4;
+}
+
+[data-theme='dark'] .markdown h2 {
+  color: #5eead4;
+}
+
+[data-theme='dark'] .markdown h3 {
+  color: #67e8f9;
+}
+
+[data-theme='dark'] .markdown h4 {
+  color: #67e8f9;
+}
+
+/* Dark mode code blocks - removed, let Prism theme handle it */
+
+/* Dark mode - Admonition colors only */
+[data-theme='dark'] .theme-admonition-note {
+  border-color: #6b8afb !important;
+}
+
+[data-theme='dark'] .theme-admonition-note h5 {
+  color: #6b8afb !important;
+}
+
+[data-theme='dark'] .theme-admonition-note svg {
+  fill: #6b8afb !important;
+  color: #6b8afb !important;
+}
+
+[data-theme='dark'] .theme-admonition-note svg path {
+  fill: #6b8afb !important;
+}
+
+[data-theme='dark'] .theme-admonition-tip {
+  border-color: #48bb78 !important;
+}
+
+[data-theme='dark'] .theme-admonition-tip h5 {
+  color: #48bb78 !important;
+}
+
+[data-theme='dark'] .theme-admonition-tip svg {
+  fill: #48bb78 !important;
+  color: #48bb78 !important;
+}
+
+[data-theme='dark'] .theme-admonition-tip svg path {
+  fill: #48bb78 !important;
+}
+
+[data-theme='dark'] .theme-admonition-warning {
+  border-color: #ecc94b !important;
+}
+
+[data-theme='dark'] .theme-admonition-warning h5 {
+  color: #ecc94b !important;
+}
+
+[data-theme='dark'] .theme-admonition-warning svg {
+  fill: #ecc94b !important;
+  color: #ecc94b !important;
+}
+
+[data-theme='dark'] .theme-admonition-warning svg path {
+  fill: #ecc94b !important;
+}
+
+/* Dark mode - Pagination */
+[data-theme='dark'] .pagination-nav__sublabel {
+  color: #6b8afb;
+}
+
+[data-theme='dark'] .pagination-nav__link:hover .pagination-nav__sublabel {
+  color: #8aa2fc;
+}
+
+/* Dark mode - Breadcrumbs */
+[data-theme='dark'] .breadcrumbs__link {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .breadcrumbs__link:hover {
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .breadcrumbs__item--active .breadcrumbs__link {
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .breadcrumbs__item:not(:last-child)::after {
+  color: #6b7280;
+}
+
+/* Dark mode - Tables */
+[data-theme='dark'] table tr:hover {
+  background-color: rgba(107, 138, 251, 0.08);
+}
+
+/* Dark mode - Reference links */
+[data-theme='dark'] .markdown a:has(.ref-link) {
+  color: #e2e8f0;
+}
+
+[data-theme='dark'] .markdown a:has(.ref-link):hover {
+  color: #6b8afb;
 }
 
 /* Navbar styling - control-toolbox inspired */
@@ -105,6 +277,23 @@
   color: var(--ifm-navbar-link-hover-color) !important;
 }
 
+/* Remove external link icon from navbar links */
+.navbar__link::after {
+  display: none !important;
+}
+
+.navbar__link[href*="github"]::after,
+.navbar__link[target="_blank"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Also target the icon element itself */
+.navbar__link svg,
+.navbar__link .iconExternalLink {
+  display: none !important;
+}
+
 /* Dropdown menu styling */
 .dropdown__menu {
   background-color: #ffffff;
@@ -127,12 +316,24 @@
 
 /* Search bar styling in sidebar */
 .theme-doc-sidebar-container input[type="text"] {
-  transition: border-color 0.2s ease;
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  border: 1px solid var(--ifm-color-emphasis-300);
 }
 
 .theme-doc-sidebar-container input[type="text"]::placeholder {
-  color: #9ca3af;
+  color: var(--ifm-color-emphasis-600);
   font-style: italic;
+}
+
+[data-theme='dark'] .theme-doc-sidebar-container input[type="text"] {
+  background-color: #18181b;
+  color: #e4e4e7;
+  border-color: #52525b;
+}
+
+[data-theme='dark'] .theme-doc-sidebar-container input[type="text"]::placeholder {
+  color: #71717a;
 }
 
 /* Sidebar category headings - black and bold */
@@ -224,6 +425,21 @@ nav.menu,
 .markdown p {
   text-align: justify;
   hyphens: auto;
+  color: var(--ifm-font-color-base);
+}
+
+/* Ensure all text elements respect theme */
+.markdown,
+.markdown p,
+.markdown li,
+.markdown td {
+  color: var(--ifm-font-color-base);
+}
+
+[data-theme='dark'] .markdown p,
+[data-theme='dark'] .markdown li,
+[data-theme='dark'] .markdown td {
+  color: var(--ifm-font-color-base);
 }
 
 /* Reduce spacing after images and center them */
@@ -233,6 +449,14 @@ nav.menu,
   display: block;
   margin-left: auto;
   margin-right: auto;
+  border-radius: 4px;
+}
+
+/* Add subtle border to images in dark mode for better visibility */
+[data-theme='dark'] .markdown img {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background-color: #ffffff;
+  padding: 4px;
 }
 
 /* Center div for figures */
@@ -305,41 +529,44 @@ a.hash-link {
   padding-bottom: 0;
 }
 
-/* Code blocks - Documenter.jl style with gray background */
+/* Code blocks - Let Prism handle colors, just style borders and spacing */
 .prism-code {
   border-radius: 3px;
   font-size: 0.9rem;
-  border: 1px solid #DCDCDC;
-  background-color: #F5F5F5 !important;
+  border: 1px solid var(--ifm-color-emphasis-300);
 }
 
 pre {
   border-radius: 3px;
-  border: 1px solid #DCDCDC;
-  background-color: #F5F5F5 !important;
+  border: 1px solid var(--ifm-color-emphasis-300);
 }
 
 div[class*="codeBlock"] {
   border-radius: 3px;
   box-shadow: none;
-  background-color: #F5F5F5;
 }
 
 div[class*="codeBlockContainer"] {
-  background-color: #F5F5F5;
-  border: 1px solid #DCDCDC;
+  border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: 3px;
   margin: 1rem 0;
 }
 
-/* Admonitions - Same style as code blocks with blue border (control-toolbox style) */
+/* Dark mode code block borders */
+[data-theme='dark'] .prism-code,
+[data-theme='dark'] pre,
+[data-theme='dark'] div[class*="codeBlockContainer"] {
+  border-color: var(--ifm-color-emphasis-400);
+}
+
+/* Admonitions - control-toolbox style */
 .theme-admonition {
   border: 2px solid #3C5DCD !important;
   border-radius: 3px !important;
   box-shadow: none !important;
   margin: 1.5rem 0 !important;
   padding: 1rem 1.25rem !important;
-  background-color: #F5F5F5 !important;
+  background-color: var(--ifm-background-surface-color) !important;
 }
 
 /* Remove inner div styling */
@@ -407,7 +634,7 @@ div[class*="codeBlockContainer"] {
 /* Warning - yellow/brown icon and border */
 .theme-admonition-warning {
   border: 2px solid #A98800 !important;
-  background-color: #F5F5F5 !important;
+  background-color: var(--ifm-background-surface-color) !important;
   border-radius: 3px !important;
   padding: 1rem 1.25rem !important;
   margin: 1.5rem 0 !important;
@@ -434,7 +661,7 @@ div[class*="codeBlockContainer"] {
 /* Content text styling */
 .theme-admonition p {
   margin: 0 !important;
-  color: #333333 !important;
+  color: var(--ifm-font-color-base) !important;
   line-height: 1.6 !important;
 }
 
@@ -722,7 +949,6 @@ li[class*="category"] {
 .markdown a:has(.ref-link) {
   color: #000000;
   text-decoration: none;
-  transition: color 0.2s ease;
 }
 
 .markdown a:has(.ref-link):hover {
@@ -732,5 +958,15 @@ li[class*="category"] {
 
 .ref-link {
   color: inherit;
+}
+
+/* Iframe styling for embedded visualizations */
+iframe {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 4px;
+}
+
+[data-theme='dark'] iframe {
+  border-color: var(--ifm-color-emphasis-400);
 }
 
