@@ -449,13 +449,13 @@ def plot_solution(rho, u, p, M_target, p_target, num_cells, length):
         line_scaler = 1.0
 
         indices = [0, 1, 1, 2, 2]
-        cindices = [0, 0, 1, 0, 1]
+        cindices = [0, 1, 0, 1, 0]
 
         gamma = 1.4
         a = np.sqrt(gamma * p / rho)
 
-        data = [rho, u / a, M_target, p, p_target]
-        label = [None, None, None, "solution", "target"]
+        data = [rho, M_target, u / a, p_target, p]
+        label = [None, "target", "solution", "target", "solution"]
 
         for i, (index, c, y) in enumerate(zip(indices, cindices, data)):
             ax[index].plot(
@@ -468,7 +468,8 @@ def plot_solution(rho, u, p, M_target, p_target, num_cells, length):
             )
 
         fontname = "Helvetica"
-        ax[-1].legend(loc="lower left", prop={"family": fontname, "size": 12})
+        ax[1].legend(loc="upper left", prop={"family": fontname, "size": 12})
+        ax[2].legend(loc="lower left", prop={"family": fontname, "size": 12})
 
         for axis in ax:
             niceplots.adjust_spines(axis, outward=True)
@@ -508,19 +509,20 @@ def plot_nozzle(A, dAdx, A_target, num_cells, length):
         fig, ax = plt.subplots(2, 1, figsize=(10, 4))
         colors = niceplots.get_colors_list()
 
-        labels = [r"$A$", r"$dA/dx$"]
-        xlabel = "location"
+        ylabels = [r"Area", r"$dA/dx$"]
+        xlabel = "Location"
         xticks = [0, 2, 4, 6, 8, 10]
 
-        for i, label in enumerate(labels):
+        for i, label in enumerate(ylabels):
             ax[i].set_ylabel(label, rotation="horizontal", horizontalalignment="right")
 
         line_scaler = 1.0
 
         indices = [0, 0, 1]
-        cindices = [0, 1, 0]
-        xdata = [xintr, xcell, xcell]
-        ydata = [A, A_target, dAdx]
+        cindices = [1, 0, 0]
+        xdata = [xcell, xintr, xcell]
+        ydata = [A_target, A, dAdx]
+        labels = ["target", "solution", None]
 
         for i, (index, c, x, y) in enumerate(zip(indices, cindices, xdata, ydata)):
             ax[index].plot(
@@ -529,12 +531,14 @@ def plot_nozzle(A, dAdx, A_target, num_cells, length):
                 clip_on=False,
                 lw=3 * line_scaler,
                 color=colors[c],
-                label=label[i],
+                label=labels[i],
             )
 
         fontname = "Helvetica"
         for axis in ax:
             niceplots.adjust_spines(axis, outward=True)
+
+        ax[0].legend(loc="lower left", prop={"family": fontname, "size": 12})
 
         for axis in ax[:-1]:
             axis.get_xaxis().set_visible(False)
@@ -915,21 +919,21 @@ print("Residual summary")
 for name in inputs:
     print(f"{name:<30} {np.linalg.norm(res[name])}")
 
-# # Plot the solution
-# rho = x["nozzle.Q[:, 0]"]
-# u = x["nozzle.Q[:, 1]"] / rho
-# p = (gamma - 1.0) * (x["nozzle.Q[:, 2]"] - 0.5 * rho * u**2)
-# plot_solution(rho, u, p, M_target, p_target, args.num_cells, length)
+# Plot the solution
+rho = x["nozzle.Q[:, 0]"]
+u = x["nozzle.Q[:, 1]"] / rho
+p = (gamma - 1.0) * (x["nozzle.Q[:, 2]"] - 0.5 * rho * u**2)
+plot_solution(rho, u, p, M_target, p_target, args.num_cells, length)
 
-# # Plot the nozzle problem solution
-# plot_nozzle(
-#     x["area.output"], x["area_derivative.output"], A_target, args.num_cells, length
-# )
+# Plot the nozzle problem solution
+plot_nozzle(
+    x["area.output"], x["area_derivative.output"], A_target, args.num_cells, length
+)
 
-# norms = []
-# for iter_data in opt_history["iterations"]:
-#     norms.append(iter_data["residual"])
+norms = []
+for iter_data in opt_history["iterations"]:
+    norms.append(iter_data["residual"])
 
-# plot_convergence(norms)
+plot_convergence(norms)
 
-# plt.show()
+plt.show()
