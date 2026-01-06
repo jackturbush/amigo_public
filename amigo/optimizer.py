@@ -146,7 +146,6 @@ class DirectScipySolver:
         # Compute the Hessian and add the diagonal values
         self.problem.hessian(alpha, x, self.hess)
         self.problem.add_diagonal(diag, self.hess)
-
         self.hess.copy_data_device_to_host()
 
         # Build the CSR matrix and convert to CSC
@@ -199,7 +198,8 @@ class LNKSInexactSolver:
         gmres_rtol=1e-2,
     ):
         self.problem = problem
-        self.hess = self.problem.create_matrix()
+        loc = MemoryLocation.HOST_AND_DEVICE
+        self.hess = self.problem.create_matrix(loc)
         self.gmres_subspace_size = gmres_subspace_size
         self.gmres_rtol = gmres_rtol
 
@@ -228,6 +228,7 @@ class LNKSInexactSolver:
         # Compute the Hessian
         self.problem.hessian(alpha, x, self.hess)
         self.problem.add_diagonal(diag, self.hess)
+        self.hess.copy_data_device_to_host()
 
         # Extract the submatrices
         self.Hmat = tocsr(self.hess)
@@ -256,6 +257,7 @@ class LNKSInexactSolver:
         return
 
     def solve(self, bx, px):
+        bx.copy_device_to_host()
         gmres(
             self.mult,
             self.precon,
@@ -264,6 +266,7 @@ class LNKSInexactSolver:
             msub=self.gmres_subspace_size,
             rtol=self.gmres_rtol,
         )
+        px.copy_host_to_device()
 
         return
 

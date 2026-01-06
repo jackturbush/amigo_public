@@ -429,6 +429,71 @@ def compute_pressure_target(
     return M_target, p_target
 
 
+def get_initial_point_and_bounds(model):
+    # Get the design variables
+    x = model.create_vector()
+    lower = model.create_vector()
+    upper = model.create_vector()
+
+    # Set the initial solution guess
+    rho = 0.5
+    u = 0.2
+    p = 0.5 / gamma
+
+    E = (p / rho) / (gamma - 1.0) + 0.5 * u**2
+    H = E + p / rho
+    x["nozzle.Q[:, 0]"] = rho
+    x["nozzle.Q[:, 1]"] = rho * u
+    x["nozzle.Q[:, 2]"] = rho * E
+
+    x["nozzle.FL[:, 0]"] = rho * u
+    x["nozzle.FL[:, 1]"] = rho * u**2 + p
+    x["nozzle.FL[:, 2]"] = rho * u * H
+
+    x["nozzle.FR[:, 0]"] = rho * u
+    x["nozzle.FR[:, 1]"] = rho * u**2 + p
+    x["nozzle.FR[:, 2]"] = rho * u * H
+
+    # Set the bounds for the inlet and outlet Mach number
+    x["inlet.M_inlet"] = 0.01
+    lower["inlet.M_inlet"] = 0.0
+    upper["inlet.M_inlet"] = 1.0
+
+    x["outlet.M_outlet"] = 0.01
+    lower["outlet.M_outlet"] = 0.0
+    upper["outlet.M_outlet"] = 1.0
+
+    # Set the lower and upper bounds for Q
+    lower["nozzle.Q"] = float("-inf")
+    upper["nozzle.Q"] = float("inf")
+
+    # Set a lower variable bound on the density
+    lower["nozzle.Q[:, 0]"] = 1e-3
+
+    # Set the initial values
+    x["nozzle.dAdx"] = 0.0
+    x["area.output"] = 1.0
+
+    # Set the bounds on the the areas
+    x["area_ctrl.area"] = 1.5
+    lower["area_ctrl.area"] = -3.0
+    upper["area_ctrl.area"] = 3.0
+
+    # Set the remaining variable lower and upper bounds
+    lower["area.output"] = -float("inf")
+    upper["area.output"] = float("inf")
+    lower["area_derivative.output"] = float("-inf")
+    upper["area_derivative.output"] = float("inf")
+    lower["flux.F"] = float("-inf")
+    upper["flux.F"] = float("inf")
+    lower["inlet.F"] = float("-inf")
+    upper["inlet.F"] = float("inf")
+    lower["outlet.F"] = float("-inf")
+    upper["outlet.F"] = float("inf")
+
+    return x, lower, upper
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--build", dest="build", action="store_true", default=False, help="Enable building"
@@ -612,82 +677,6 @@ eta = xi_cell_center / length
 # Compute the target area distribution
 A_target = compute_area_target(eta)
 
-# Evaluate the target pressure distribution
-M_target, p_target = compute_pressure_target(A_target, p_res, gamma, Astar)
-
-# Set the pressure target distribution
-data["objective.p0"] = p_target
-
-# Set the initial continuation parameters
-data["pseudo_transient.CFL[0]"] = 10.0
-data["design_continuation.diagonal_weight[0]"] = 100.0
-
-# Set the area derivative data
-area.set_data("area", data)
-area_derivative.set_data("area_derivative", data)
-data.get_vector().copy_host_to_device()
-
-# Get the design variables
-x = model.create_vector()
-lower = model.create_vector()
-upper = model.create_vector()
-
-# Set the initial solution guess
-rho = 0.5
-u = 0.2
-p = 0.5 / gamma
-
-E = (p / rho) / (gamma - 1.0) + 0.5 * u**2
-H = E + p / rho
-x["nozzle.Q[:, 0]"] = rho
-x["nozzle.Q[:, 1]"] = rho * u
-x["nozzle.Q[:, 2]"] = rho * E
-
-x["nozzle.FL[:, 0]"] = rho * u
-x["nozzle.FL[:, 1]"] = rho * u**2 + p
-x["nozzle.FL[:, 2]"] = rho * u * H
-
-x["nozzle.FR[:, 0]"] = rho * u
-x["nozzle.FR[:, 1]"] = rho * u**2 + p
-x["nozzle.FR[:, 2]"] = rho * u * H
-
-# Set the bounds for the inlet and outlet Mach number
-x["inlet.M_inlet"] = 0.01
-lower["inlet.M_inlet"] = 0.0
-upper["inlet.M_inlet"] = 1.0
-
-x["outlet.M_outlet"] = 0.01
-lower["outlet.M_outlet"] = 0.0
-upper["outlet.M_outlet"] = 1.0
-
-# Set the lower and upper bounds for Q
-lower["nozzle.Q"] = float("-inf")
-upper["nozzle.Q"] = float("inf")
-
-# Set a lower variable bound on the density
-lower["nozzle.Q[:, 0]"] = 1e-3
-
-# Set the initial values
-x["nozzle.dAdx"] = 0.0
-x["area.output"] = 1.0
-
-# Set the bounds on the the areas
-x["area_ctrl.area"] = 1.5
-lower["area_ctrl.area"] = -3.0
-upper["area_ctrl.area"] = 3.0
-
-# Set the remaining variable lower and upper bounds
-lower["area.output"] = -float("inf")
-upper["area.output"] = float("inf")
-lower["area_derivative.output"] = float("-inf")
-upper["area_derivative.output"] = float("inf")
-lower["flux.F"] = float("-inf")
-upper["flux.F"] = float("inf")
-lower["inlet.F"] = float("-inf")
-upper["inlet.F"] = float("inf")
-lower["outlet.F"] = float("-inf")
-upper["outlet.F"] = float("inf")
-
 solver = None
 if args.use_lnks:
     problem = model.get_problem()
@@ -718,19 +707,42 @@ def continuation_control(iteration, res_norm):
     return
 
 
-# Set up the optimizer
-opt = am.Optimizer(model, x, lower=lower, upper=upper, solver=solver)
+# Print the size of the model
+print(f"Num variables:              {model.num_variables}")
+print(f"Num constraints:            {model.num_constraints}")
 
-opt_history = opt.optimize(
-    {
-        "max_iterations": 1000,
-        "record_components": ["area_ctrl.area"],
-        "max_line_search_iterations": 4,
-        "convergence_tolerance": 1e-9,
-        "monotone_barrier_fraction": 0.1,
-        "continuation_control": continuation_control,
-    }
-)
+for opt_iter in range(2):
+    # Evaluate the target pressure distribution
+    M_target, p_target = compute_pressure_target(A_target, p_res, gamma, Astar)
+
+    # Set the pressure target distribution
+    data["objective.p0"] = p_target
+
+    # Set the initial continuation parameters
+    data["pseudo_transient.CFL[0]"] = 10.0
+    data["design_continuation.diagonal_weight[0]"] = 100.0
+
+    # Set the area derivative data
+    area.set_data("area", data)
+    area_derivative.set_data("area_derivative", data)
+    data.get_vector().copy_host_to_device()
+
+    # Set the initial point and bounds
+    x, lower, upper = get_initial_point_and_bounds(model)
+
+    # Set up the optimizer
+    opt = am.Optimizer(model, x, lower=lower, upper=upper, solver=solver)
+
+    opt_history = opt.optimize(
+        {
+            "max_iterations": 1000,
+            "record_components": ["area_ctrl.area"],
+            "max_line_search_iterations": 4,
+            "convergence_tolerance": 1e-9,
+            "monotone_barrier_fraction": 0.1,
+            "continuation_control": continuation_control,
+        }
+    )
 
 opt_history["num_cells"] = args.num_cells
 opt_history["num_variables"] = model.num_variables
