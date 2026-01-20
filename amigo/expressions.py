@@ -512,19 +512,19 @@ class ExprBuilder:
     def _get_ad_type(self, expr, reference=True, mode="eval", template_name="T__"):
         decl = self._get_expr_type(expr, template_name=template_name)
         if mode == "eval" or not expr.is_active():
+            if reference:
+                return f"{decl}&"
             return decl
         elif mode == "grad":
             if reference:
                 return f"A2D::ADObj<{decl}&>"
-            else:
-                return f"A2D::ADObj<{decl}>"
+            return f"A2D::ADObj<{decl}>"
         else:
             if reference:
                 return f"A2D::A2DObj<{decl}&>"
-            else:
-                return f"A2D::A2DObj<{decl}>"
+            return f"A2D::A2DObj<{decl}>"
 
-    def _get_declarations(
+    def get_declarations(
         self, inputs, reference=True, mode="eval", template_name="T__"
     ):
         lines = []
@@ -537,7 +537,7 @@ class ExprBuilder:
 
         return lines
 
-    def _get_input_declarations(
+    def get_input_declarations(
         self,
         inputs,
         mode="eval",
@@ -553,14 +553,13 @@ class ExprBuilder:
             decl = self._get_ad_type(expr, mode=mode, template_name=template_name)
 
             line = f"{decl} {expr.to_cpp()}"
-            if mode == "eval":
+            if mode == "eval" or not expr.is_active():
                 line = f"{line} = A2D::get<{index}>({input_name})"
             elif mode == "grad":
-                line = f"{line} = {decl}(A2D::get<{index}>({input_name}), A2D::get<{index}>({grad_name}))"
+                line = f"{line}(A2D::get<{index}>({input_name}), A2D::get<{index}>({grad_name}))"
             else:
                 line = (
-                    f"{line} = "
-                    + f"{decl}(A2D::get<{index}>({input_name}), A2D::get<{index}>({grad_name}), "
+                    f"{line}(A2D::get<{index}>({input_name}), A2D::get<{index}>({grad_name}), "
                     + f"A2D::get<{index}>({prod_name}), A2D::get<{index}>({hprod_name}))"
                 )
             lines.append(line)
@@ -584,13 +583,13 @@ class ExprBuilder:
         active = []
 
         # Get lines for the data - note that we use the data name here
-        decl = self._get_input_declarations(
+        decl = self.get_input_declarations(
             self.data, mode=mode, template_name=template_name, input_name=data_name
         )
 
         # Get the declaration lines for the input
         decl.extend(
-            self._get_input_declarations(
+            self.get_input_declarations(
                 self.inputs,
                 mode=mode,
                 template_name=template_name,
@@ -604,7 +603,7 @@ class ExprBuilder:
         # Get the declaration lines for the temporaries
         temps = [t for t, _ in self.temp_exprs]
         decl.extend(
-            self._get_declarations(
+            self.get_declarations(
                 temps,
                 reference=False,
                 mode=mode,

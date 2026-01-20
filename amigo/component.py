@@ -523,6 +523,7 @@ class Component:
         self.objective = ObjectiveSet()
         self.data = DataSet()
         self.outputs = OutputSet()
+        self.multipliers = {}
 
         # Set the compute function arguments
         self.args = [{}]
@@ -695,7 +696,7 @@ class Component:
             mult_name = self.constraints.get_multiplier_name(name)
             if mult_name not in self.inputs:
                 shape = self.constraints.get_shape(name)
-                self.inputs.add(mult_name, shape=shape)
+                self.multipliers[mult_name] = Expr(VarNode(mult_name, shape=shape))
 
         return
 
@@ -711,7 +712,7 @@ class Component:
         for name in self.constraints:
             mult_name = self.constraints.get_multiplier_name(name)
             con = self.constraints[name]
-            lam = self.inputs[mult_name]
+            lam = self.multipliers[mult_name]
 
             shape = self.constraints.get_shape(name)
 
@@ -881,6 +882,7 @@ class Component:
         consts = [self.constants[name] for name in self.constants]
         data = [self.data[name] for name in self.data]
         inputs = [self.inputs[name] for name in self.inputs]
+        inputs += [self.multipliers[name] for name in self.multipliers]
 
         for index, args in enumerate(self.args):
             # Re-initialize any variables or other arguments
@@ -951,6 +953,7 @@ class Component:
 
             cpp += self._generate_output_cpp(
                 builder,
+                lhs,
                 template_name=using_template,
                 data_name=data_name,
                 input_name=input_name,
@@ -1018,6 +1021,10 @@ class Component:
                 hprod_name=hprod_name,
             )
 
+            decl += builder.get_declarations(
+                [lhs], reference=False, mode=mode, template_name=template_name
+            )
+
             if mode == "eval":
                 for line in decl + passive + active:
                     cpp += "    " + line + ";\n"
@@ -1050,6 +1057,7 @@ class Component:
     def _generate_output_cpp(
         self,
         builder,
+        lhs,
         template_name="R__",
         data_name="data__",
         input_name="input__",
@@ -1067,6 +1075,14 @@ class Component:
 
         if not self.is_output_empty():
             decl, passive, active = builder.get_cpp_lines(mode="eval")
+
+            decl += builder.get_input_declarations(
+                lhs,
+                reference=True,
+                mode="eval",
+                template_name=template_name,
+                input_name=data_name,
+            )
 
             for line in decl + passive + active:
                 cpp += "    " + line + ";\n"
