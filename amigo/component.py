@@ -253,22 +253,15 @@ class VarSet:
             shape = _get_shape_from_list(expr)
             self.vars[name] = self.VarExpr(name, shape=shape)
 
-            # Check whether we should reset the active flag
-            active = False
             if len(shape) == 1:
                 for i in range(shape[0]):
                     self.vars[name].expr[i] = expr[i]
-                    active = active or expr[i].active
                     expr[i].name = f"{name}[{i}]"
             elif len(shape) == 2:
                 for i in range(shape[0]):
                     for j in range(shape[1]):
                         self.vars[name].expr[i][j] = expr[i][j]
-                        active = active or expr[i][j].active
                         expr[i][j].name = f"{name}({i}, {j})"
-
-            self.vars[name].active = active
-            self.vars[name].var.active = active
 
         return
 
@@ -449,7 +442,7 @@ class OutputSet:
             self.name = name
             self.shape = _normalize_shape(shape)
             self.type = type
-            self.var = VarNode(name, shape=shape, type=type, active=active)
+            self.var = Expr(VarNode(name, shape=shape, type=type, active=active))
             self.active = active
             self.expr = None
 
@@ -1074,14 +1067,11 @@ class Component:
         )
 
         if not self.is_output_empty():
-            decl, passive, active = builder.get_cpp_lines(mode="eval")
-
+            decl, passive, active = builder.get_cpp_lines(
+                mode="eval", template_name=template_name, data_name=data_name
+            )
             decl += builder.get_input_declarations(
-                lhs,
-                reference=True,
-                mode="eval",
-                template_name=template_name,
-                input_name=data_name,
+                lhs, mode="eval", template_name=template_name, input_name=data_name
             )
 
             for line in decl + passive + active:
