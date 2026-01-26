@@ -726,11 +726,11 @@ div[class*="codeBlockContainer"] {
   color: #999 !important;
 }
 
-/* Hide footer on documentation pages (only show on homepage) */
-article .footer,
-.theme-doc-footer ~ .footer,
-[class*="docPage"] .footer,
-[class*="docRoot"] .footer {
+/* Hide footer on all documentation pages */
+.docs-wrapper .footer,
+.theme-doc-sidebar-container ~ * .footer,
+html:has(.theme-doc-sidebar-container) .footer,
+html:has(article) .footer {
   display: none !important;
 }
 
