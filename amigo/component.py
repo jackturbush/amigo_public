@@ -35,11 +35,11 @@ def _get_shape_from_list(obj):
     return (length,) + sub_shape
 
 
-def _generate_cpp_types(inputs, template_name="T__"):
+def _generate_cpp_types(shapes, template_name="T__"):
     lines = []
 
-    for name in inputs:
-        shape = _normalize_shape(inputs[name].node.shape)
+    for shape_ in shapes:
+        shape = _normalize_shape(shape_)
         if shape is None:
             lines.append(f"{template_name}")
         else:
@@ -166,7 +166,8 @@ class InputSet:
         return self.meta[name]
 
     def generate_cpp_types(self, template_name="T__"):
-        return _generate_cpp_types(self.inputs, template_name=template_name)
+        shapes = [self.inputs[name].node.shape for name in self.inputs]
+        return _generate_cpp_types(shapes, template_name=template_name)
 
 
 class ConstantSet:
@@ -269,7 +270,8 @@ class VarSet:
         self.vars = {}
 
     def generate_cpp_types(self, template_name="T__"):
-        return _generate_cpp_types(self.vars, template_name=template_name)
+        shapes = [self.vars[name].node.shape for name in self.vars]
+        return _generate_cpp_types(shapes, template_name=template_name)
 
 
 class DataSet:
@@ -291,7 +293,8 @@ class DataSet:
         return iter(self.data)
 
     def generate_cpp_types(self, template_name="T__"):
-        return _generate_cpp_types(self.data, template_name=template_name)
+        shapes = [self.data[name].node.shape for name in self.data]
+        return _generate_cpp_types(shapes, template_name=template_name)
 
     def get_shape(self, name):
         return self.data[name].node.shape
@@ -381,18 +384,8 @@ class ConstraintSet:
             raise KeyError(f"{name} not in declared constraints")
 
     def generate_cpp_types(self, template_name="T__"):
-        lines = []
-        for name in self.cons:
-            shape = _normalize_shape(self.cons[name].shape)
-            if shape is None:
-                lines.append(f"{template_name}")
-            else:
-                if len(shape) == 1:
-                    lines.append(f"A2D::Vec<{template_name}, {shape[0]}>")
-                elif len(shape) == 2:
-                    lines.append(f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>")
-
-        return lines
+        shapes = [self.cons[name].shape for name in self.cons]
+        return _generate_cpp_types(shapes, template_name=template_name)
 
 
 class ObjectiveSet:
@@ -483,18 +476,8 @@ class OutputSet:
             self.outputs[name].expr = None
 
     def generate_cpp_types(self, template_name="T__"):
-        lines = []
-        for name in self.outputs:
-            shape = _normalize_shape(self.outputs[name].shape)
-            if shape is None:
-                lines.append(f"{template_name}")
-            else:
-                if len(shape) == 1:
-                    lines.append(f"A2D::Vec<{template_name}, {shape[0]}>")
-                elif len(shape) == 2:
-                    lines.append(f"A2D::Mat<{template_name}, {shape[0]}, {shape[1]}>")
-
-        return lines
+        shapes = [self.outputs[name].shape for name in self.outputs]
+        return _generate_cpp_types(shapes, template_name=template_name)
 
     def get_var(self, name):
         return self.outputs[name].var
@@ -504,9 +487,12 @@ class OutputSet:
 
 
 class Component:
-    def __init__(self):
+    def __init__(self, name=None):
         # Set the name - this will be the ComponentGroup name in C++
-        self.name = self.__class__.__name__
+        if name is None:
+            self.name = self.__class__.__name__
+        else:
+            self.name = name
 
         # Set the input values
         self.constants = ConstantSet()
