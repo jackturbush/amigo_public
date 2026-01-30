@@ -51,7 +51,7 @@ Below are two short examples that illustrate some of the features of Amigo.
 
 First, the Rosenbrock function is a frequently used example problem in optimization. In Amigo, all analysis occurs within classes that are derived from `amigo.Component`.
 
-The inputs, constraints, outputs, objective function, data and class constants are defined in the constructor. Values are accessed through dictionary member data structures `self.inputs`, `self.constraints`, `self.outputs`, `self.objective`, `self.data` and `self.constants`. Additionally, intermediate variable values can be defined on the fly and utilized through a `self.vars` dictionary.
+The inputs, constraints, outputs, objective function, data and class constants are defined in the constructor. Values are accessed through dictionary member data structures `self.inputs`, `self.constraints`, `self.outputs`, `self.objective`, `self.data` and `self.constants`.
 
 The Rosenbrock component takes two inputs `x1` and `x2` and provides the objective value `obj` and a constraint `con`.
 
