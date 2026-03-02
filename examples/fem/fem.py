@@ -7,6 +7,25 @@ import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 
 
+class DofSource(am.Component):
+    def __init__(self, input_names=[], geo_names=[], data_names=[], con_names=[]):
+        super().__init__()
+
+        # Geo and data added as data to the component
+        for name in data_names:
+            self.add_data(name)
+        for name in geo_names:
+            self.add_data(name)
+
+        # Add inputs and constraints
+        for name in input_names:
+            self.add_input(name)
+        for name in con_names:
+            self.add_constraint(name)
+
+        return
+
+
 class InpParser:
     def __init__(self):
         self.elements = {}
@@ -85,6 +104,68 @@ class InpParser:
     def get_conn(self, elset, elem_type):
         conn = self.elem_conn[elset][elem_type]
         return np.array([conn[k] for k in sorted(conn.keys())], dtype=int)
+
+
+class DegreesOfFreedom:
+    def __init__(self, mesh, space, kind="input"):
+        """
+        Allocate the degrees of freedom on the mesh
+        """
+
+        self.mesh = mesh
+        self.space = space
+        self.kind = kind
+
+        return
+
+    def _initialize(self):
+        """
+        Initialize the degrees of freedom associated with this mesh
+        """
+
+        # Allocate degrees of freedom for each of the nodes/
+
+        return
+
+    def add_source(self, model):
+
+        # if "H1" in self.space.get_spaces():
+        #     model.add_component(f"src_{self.kind}", ndof, )
+        # if "H1" in self.space.get_spaces():
+
+        # if "H1" in self.space.get_spaces():
+
+        pass
+
+    def get_basis(self, etype, space, names=[], kind="input"):
+        if etype == "CPS3":
+            if space == "H1":
+                return basis.TriangleLagrangeBasis(1, names, kind=kind)
+        elif etype == "CPS4":
+            if space == "H1":
+                return basis.QuadLagrangeBasis(1, names, kind=kind)
+        elif etype == "CPS6":
+            if space == "H1":
+                return basis.TriangleLagrangeBasis(2, names, kind=kind)
+        elif etype == "M3D9":
+            if space == "H1":
+                return basis.QuadLagrangeBasis(2, names, kind=kind)
+
+        raise NotImplementedError(
+            f"Basis for element {etype} with space {space} not implemented"
+        )
+
+    def get_quadrature(self, etype):
+        if etype == "CPS3":
+            return basis.TriangleQuadrature(2)
+        elif etype == "CPS4":
+            return basis.QuadQuadrature(2)
+        elif etype == "CPS6":
+            return basis.TriangleQuadrature(4)
+        elif etype == "M3D9":
+            return basis.QuadQuadrature(3)
+
+        raise NotImplementedError(f"Quadrature for element {etype} not implemented")
 
 
 class Mesh:
@@ -176,25 +257,6 @@ class Mesh:
         return np.vstack(cs)
 
 
-class NodeSource(am.Component):
-    def __init__(self, input_names=[], geo_names=[], data_names=[], con_names=[]):
-        super().__init__()
-
-        # Geo and data added as data to the component
-        for name in data_names:
-            self.add_data(name)
-        for name in geo_names:
-            self.add_data(name)
-
-        # Add inputs and constraints
-        for name in input_names:
-            self.add_input(name)
-        for name in con_names:
-            self.add_constraint(name)
-
-        return
-
-
 class Problem:
     def __init__(self, mesh, soln_space, weakform, data_space=[], ndim=2):
 
@@ -211,6 +273,10 @@ class Problem:
 
         self.weakform = weakform
 
+        self.soln_dof = self.mesh.create_dof(self.mesh, self.soln_space, "soln")
+        self.data_dof = self.mesh.create_dof(self.mesh, self.data_space, "data")
+        self.geo_dof = self.mesh.create_dof(self.mesh, self.geo_space, "geo")
+
         return
 
     def create_model(self, module_name: str):
@@ -219,18 +285,22 @@ class Problem:
         model = am.Model(module_name)
 
         # Get the degrees of freedom associated with H1
-        input_names = self.soln_space.get_names("H1")
-        data_names = self.data_space.get_names("H1")
-        geo_names = self.geo_space.get_names("H1")
+        self.soln_dof.add_source(model)
+        self.data_dof.add_source(model)
+        self.geo_dof.add_source(model)
+
+        # input_names = self.soln_space.get_names("H1")
+        # data_names = self.data_space.get_names("H1")
+        # geo_names = self.geo_space.get_names("H1")
 
         # Get the number of nodes from the mesh
-        nnodes = self.mesh.get_num_nodes()
+        # nnodes = self.mesh.get_num_nodes()
 
-        # Create a node source object for all nodes in the mesh
-        src = NodeSource(
-            input_names=input_names, geo_names=geo_names, data_names=data_names
-        )
-        model.add_component("src", nnodes, src)
+        # # Create a node source object for all nodes in the mesh
+        # src = NodeSource(
+        #     input_names=input_names, geo_names=geo_names, data_names=data_names
+        # )
+        # model.add_component("src", nnodes, src)
 
         # Build the elements for all domains
         domains = self.mesh.get_domains()
@@ -240,11 +310,13 @@ class Problem:
                 # Build a finite-element for each weak form
                 elem_name = f"Element{etype}_{domain}"
 
-                soln_basis = self.get_basis(etype, "H1", input_names, kind="input")
-                data_basis = self.get_basis(etype, "H1", data_names, kind="data")
-                geo_basis = self.get_basis(etype, "H1", geo_names, kind="data")
+                # Create the data spaces
+                soln_basis = self.soln_dof.get_basis(etype, kind="input")
+                data_basis = self.data_dof.get_basis(etype, kind="data")
+                geo_basis = self.geo_dof.get_basis(etype, kind="data")
 
-                quadrature = self.get_quadrature(etype)
+                # Create the quadrature instance
+                quadrature = self.soln_dof.get_quadrature(etype)
 
                 # Create the element object
                 elem = FiniteElement(
@@ -259,45 +331,19 @@ class Problem:
                 # Get the connectivity
                 conn = self.mesh.get_conn(domain, etype)
 
-                # Add the component
+                # Add the element/component
                 nelems = conn.shape[0]
                 model.add_component(elem_name, nelems, elem)
 
-                # Link this component
-                for name in input_names + data_names + geo_names:
-                    model.link(f"src.{name}", f"{elem_name}.{name}", src_indices=conn)
+                # Link all the element dof to the component
+                self.soln_dof.link_dof(model, elem_name)
+                self.data_dof.link_dof(model, elem_name)
+                self.geo_dof.link_dof(model, elem_name)
+
+                # for name in input_names + data_names + geo_names:
+                #     model.link(f"src.{name}", f"{elem_name}.{name}", src_indices=conn)
 
         return model
-
-    def get_basis(self, etype, space, names=[], kind="input"):
-        if etype == "CPS3":
-            if space == "H1":
-                return basis.TriangleLagrangeBasis(1, names, kind=kind)
-        elif etype == "CPS4":
-            if space == "H1":
-                return basis.QuadLagrangeBasis(1, names, kind=kind)
-        elif etype == "CPS6":
-            if space == "H1":
-                return basis.TriangleLagrangeBasis(2, names, kind=kind)
-        elif etype == "M3D9":
-            if space == "H1":
-                return basis.QuadLagrangeBasis(2, names, kind=kind)
-
-        raise NotImplementedError(
-            f"Basis for element {etype} with space {space} not implemented"
-        )
-
-    def get_quadrature(self, etype):
-        if etype == "CPS3":
-            return basis.TriangleQuadrature(2)
-        elif etype == "CPS4":
-            return basis.QuadQuadrature(2)
-        elif etype == "CPS6":
-            return basis.TriangleQuadrature(4)
-        elif etype == "M3D9":
-            return basis.QuadQuadrature(3)
-
-        raise NotImplementedError(f"Quadrature for element {etype} not implemented")
 
 
 class FiniteElement(am.Component):
@@ -349,6 +395,10 @@ def weakform(soln, data=None, geo=None):
     uvalue = u["value"]
     ugrad = u["grad"]
 
+    v = soln["v"]
+    vvalue = v["value"]
+    vcurl = v["curl"]
+
     x = geo["x"]["value"]
     y = geo["y"]["value"]
     rho = data["rho"]["value"]
@@ -358,7 +408,7 @@ def weakform(soln, data=None, geo=None):
     return 0.5 * (uvalue**2 + basis.dot_product(ugrad, ugrad, n=2) - 2.0 * uvalue * f)
 
 
-soln_space = basis.SolutionSpace({"u": "H1"})
+soln_space = basis.SolutionSpace({"u": "H1"}, {"v": "H(curl)"})
 data_space = basis.SolutionSpace({"rho": "H1"})
 
 # mesh = Mesh("magnet.inp")
@@ -379,6 +429,7 @@ model = problem.create_model("test")
 model.build_module()
 model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
 
+print("num_variables = ", model.num_variables)
 problem = model.get_problem()
 
 # Set the problem data

@@ -17,7 +17,7 @@ def mat_vec_transpose(A, x, m=1, n=1):
     return [A[0][0] * x[0] + A[1][0] * x[1], A[0][1] * x[0] + A[1][1] * x[1]]
 
 
-def eval_monomials(p, xi, eta, exps):
+def eval_2d_monomials(p, xi, eta, exps):
     """out[k] = xi^i * eta^j for each (i,j)."""
     xi_pows = np.ones(p + 1)
     eta_pows = np.ones(p + 1)
@@ -34,7 +34,7 @@ def eval_monomials(p, xi, eta, exps):
     return out
 
 
-def eval_monomial_grad(p, xi, eta, exps):
+def eval_2d_monomial_grad(p, xi, eta, exps):
     """grads[k] = [i * xi^{i-1} * eta^{j}, j * xi^{i} * eta^{j-1}]"""
     xi_pows = np.ones(p + 1)
     eta_pows = np.ones(p + 1)
@@ -54,11 +54,11 @@ def eval_monomial_grad(p, xi, eta, exps):
     return grad
 
 
-def build_vandermonde(n, p, pts, exps):
+def build_2d_lagrange_vandermonde(n, p, pts, exps):
     # Build Vandermonde: V[a,k] = m_k(node_a)
     V = np.zeros((n, n), dtype=float)
     for a, (xi, eta) in enumerate(pts):
-        V[a, :] = eval_monomials(p, xi, eta, exps)
+        V[a, :] = eval_2d_monomials(p, xi, eta, exps)
 
     # Compute C = V^{-1}
     I = np.eye(n, dtype=float)
@@ -125,7 +125,7 @@ class TriangleLagrangeBasis(LagrangeBasis2D):
 
         self.pts = self._get_tri_nodes(self.p)
         self.exps = self._get_monomial_exponents(self.p)
-        self.C = build_vandermonde(self.nnodes, self.p, self.pts, self.exps)
+        self.C = build_2d_lagrange_vandermonde(self.nnodes, self.p, self.pts, self.exps)
 
         return
 
@@ -170,11 +170,11 @@ class TriangleLagrangeBasis(LagrangeBasis2D):
         eta = pt[1]
 
         # Evaluate the monomials
-        m = eval_monomials(self.p, xi, eta, self.exps)
+        m = eval_2d_monomials(self.p, xi, eta, self.exps)
         N = m @ self.C
 
         # Evaluate the derivatives of the monomials
-        mgrad = eval_monomial_grad(self.p, xi, eta, self.exps)
+        mgrad = eval_2d_monomial_grad(self.p, xi, eta, self.exps)
         Nxi = mgrad[:, 0] @ self.C
         Neta = mgrad[:, 1] @ self.C
 
@@ -207,7 +207,7 @@ class QuadLagrangeBasis(LagrangeBasis2D):
 
         self.pts = self._get_quad_nodes(self.p)
         self.exps = self._get_monomial_exponents(self.p)
-        self.C = build_vandermonde(self.nnodes, self.p, self.pts, self.exps)
+        self.C = build_2d_lagrange_vandermonde(self.nnodes, self.p, self.pts, self.exps)
 
         return
 
@@ -251,11 +251,11 @@ class QuadLagrangeBasis(LagrangeBasis2D):
         eta = pt[1]
 
         # Evaluate the monomials
-        m = eval_monomials(self.p, xi, eta, self.exps)
+        m = eval_2d_monomials(self.p, xi, eta, self.exps)
         N = m @ self.C
 
         # Evaluate the derivatives of the monomials
-        mgrad = eval_monomial_grad(self.p, xi, eta, self.exps)
+        mgrad = eval_2d_monomial_grad(self.p, xi, eta, self.exps)
         Nxi = mgrad[:, 0] @ self.C
         Neta = mgrad[:, 1] @ self.C
 
