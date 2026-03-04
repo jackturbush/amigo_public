@@ -198,17 +198,18 @@ class Mesh:
 
 class Problem:
     # soln_space = object
-    def __init__(self, mesh, soln_space, weakform, data_space=[], ndim=2):
+    def __init__(self, mesh, soln_space, weakform, data_space=[], geo_space=[], ndim=2):
 
         self.mesh = mesh
         self.ndim = ndim  # Dimension of the problem
 
         self.soln_space = soln_space
         self.data_space = data_space
+        self.geo_space = geo_space
 
-        """Tell the mesh what dof, and basis"""
-        if self.ndim == 2:
-            self.geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
+        # """Tell the mesh what dof, and basis"""
+        # if self.ndim == 2:
+        #     self.geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
 
         self.weakform = weakform
 
@@ -382,10 +383,18 @@ def weakform(soln, data=None, geo=None):
 
 soln_space = basis.SolutionSpace({"u": "H1"})
 data_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
+geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
 
 mesh = Mesh("magnet_order_1.inp")
 # mesh = Mesh("plate.inp")
-problem = Problem(mesh, soln_space, weakform, data_space=data_space, ndim=2)
+problem = Problem(
+    mesh,
+    soln_space,
+    weakform,
+    data_space=data_space,
+    geo_space=geo_space,
+    ndim=2,
+)
 
 model = problem.create_model("test")
 
