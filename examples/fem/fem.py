@@ -122,7 +122,7 @@ class Mesh:
     def get_conn(self, name, etype):
         return self.parser.get_conn(name, etype)
 
-    def plot(self, u, ax=None, nlevels=30, cmap="coolwarm"):
+    def plot(self, u, ax=None, nlevels=30, cmap="coolwarm", title=None):
         min_level = np.min(u)
         max_level = np.max(u)
         levels = np.linspace(min_level, max_level, nlevels)
@@ -147,17 +147,21 @@ class Mesh:
                 )
 
                 # Overlay the mesh skeleton
-                gmsh_conn = self.get_conn(name, etype)
-                X2d = self.X[:, 0:2]
-                polygons = [X2d[row] for row in gmsh_conn]
-                mesh = PolyCollection(
-                    polygons,
-                    facecolor="none",
-                    edgecolor="black",
-                    linewidth=0.5,
-                    alpha=0.4,
-                )
-                ax.add_collection(mesh)
+                # gmsh_conn = self.get_conn(name, etype)
+                # X2d = self.X[:, 0:2]
+                # polygons = [X2d[row] for row in gmsh_conn]
+                # mesh = PolyCollection(
+                #     polygons,
+                #     facecolor="none",
+                #     edgecolor="black",
+                #     linewidth=0.5,
+                #     alpha=0.4,
+                # )
+                # ax.add_collection(mesh)
+
+                if title is not None:
+                    ax.set_title(title)
+
                 ax.set_aspect("equal")
         return ax
 
@@ -208,10 +212,6 @@ class Problem:
         self.data_space = data_space
         self.geo_space = geo_space
 
-        # """Tell the mesh what dof, and basis"""
-        # if self.ndim == 2:
-        #     self.geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
-
         self.weakform = weakform
 
         # Initialize Dof's
@@ -241,16 +241,23 @@ class Problem:
         domains = self.mesh.get_domains()
         for domain in domains:
             for etype in domains[domain]:
+                soln_basis = {}
                 # Build a finite-element for each weak form
                 elem_name = f"Element{etype}_{domain}"
 
-                soln_basis_u = self.soln_dof.get_basis(
-                    etype, "H1", names=input_names, kind="input"
-                )
+                # soln_basis_u = self.soln_dof.get_basis(
+                #     etype, "H1", names=input_names, kind="input"
+                # )
 
-                soln_basis_v = self.soln_dof.get_basis(
-                    etype, "H1", names=input_names, kind="input"
-                )
+                # soln_basis_v = self.soln_dof.get_basis(
+                #     etype, "H1", names=input_names, kind="input"
+                # )
+
+                # Each input gets a basis function assigned to it
+                for name in input_names:
+                    soln_basis[f"{name}"] = self.soln_dof.get_basis(
+                        etype, "H1", names=input_names, kind="input"
+                    )
 
                 data_basis = self.data_dof.get_basis(
                     etype, "H1", names=data_names, kind="data"
@@ -265,7 +272,7 @@ class Problem:
                 # Create the element object
                 elem = FiniteElement(
                     elem_name,
-                    [soln_basis_u, soln_basis_v],
+                    soln_basis,
                     data_basis,
                     geo_basis,
                     quadrature,
@@ -310,18 +317,12 @@ class FiniteElement(am.Component):
     ):
         super().__init__(name=name)
 
-        self.soln_basis_u = soln_basis[0]
-        self.soln_basis_v = soln_basis[1]
+        self.soln_basis = soln_basis
         self.data_basis = data_basis
         self.geo_basis = geo_basis
         self.quadrature = quadrature
         self.weakform = weakform
-
-        # Add the declarations for each basis used in the element
-        # Declrations = add inputs, add data etc.
-        # self.soln_basis.add_declarations(self)
-        # self.data_basis.add_declarations(self)
-        # self.geo_basis.add_declarations(self)
+        self.input_names = input_names
 
         # The x/y coordinates
         if etype == "CPS3":
@@ -335,7 +336,7 @@ class FiniteElement(am.Component):
             self.add_data(name, shape=shape)
 
         # Inputs
-        for name in input_names:
+        for name in self.input_names:
             self.add_input(name, shape=shape)
 
         # Set the arguments to the compute function for each quadrature point
@@ -349,37 +350,50 @@ class FiniteElement(am.Component):
 
         quad_weight, quad_point = self.quadrature.get_point(**args)
 
-        # Evaluate the solution fields/data fields (u)
-        soln_xi_u = self.soln_basis_u.eval(self, quad_point)
-        data_xi_u = self.data_basis.eval(self, quad_point)
-        geo_u = self.geo_basis.eval(self, quad_point)
+        # # Evaluate the solution fields/data fields (u)
+        # soln_xi_u = self.soln_basis["u"].eval(self, quad_point)
+        # data_xi_u = self.data_basis.eval(self, quad_point)
+        # geo_u = self.geo_basis.eval(self, quad_point)
 
-        # Perform the mapping from computational to physical coordinates (u)
-        detJ_u, Jinv_u = self.geo_basis.compute_transform(geo_u)
-        soln_phys_u = self.soln_basis_u.transform(detJ_u, Jinv_u, soln_xi_u)
-        data_phys_u = self.data_basis.transform(detJ_u, Jinv_u, data_xi_u)
+        # # Perform the mapping from computational to physical coordinates (u)
+        # detJ_u, Jinv_u = self.geo_basis.compute_transform(geo_u)
+        # soln_phys_u = self.soln_basis["u"].transform(detJ_u, Jinv_u, soln_xi_u)
+        # data_phys_u = self.data_basis.transform(detJ_u, Jinv_u, data_xi_u)
 
-        # Evaluate the solution fields/data fields (v)
-        soln_xi_v = self.soln_basis_v.eval(self, quad_point)
-        data_xi_v = self.data_basis.eval(self, quad_point)
-        geo_v = self.geo_basis.eval(self, quad_point)
+        # # Evaluate the solution fields/data fields (v)
+        # soln_xi_v = self.soln_basis["v"].eval(self, quad_point)
+        # data_xi_v = self.data_basis.eval(self, quad_point)
+        # geo_v = self.geo_basis.eval(self, quad_point)
 
-        # Perform the mapping from computational to physical coordinates (u)
-        detJ_v, Jinv_v = self.geo_basis.compute_transform(geo_v)
-        soln_phys_v = self.soln_basis_v.transform(detJ_v, Jinv_v, soln_xi_v)
-        data_phys_v = self.data_basis.transform(detJ_v, Jinv_v, data_xi_v)
+        # # Perform the mapping from computational to physical coordinates (u)
+        # detJ_v, Jinv_v = self.geo_basis.compute_transform(geo_v)
+        # soln_phys_v = self.soln_basis["v"].transform(detJ_v, Jinv_v, soln_xi_v)
+        # data_phys_v = self.data_basis.transform(detJ_v, Jinv_v, data_xi_v)
+
+        # Evaluate the solution fields/data fields (u, v)
+        soln_phys = {}
+
+        data_xi = self.data_basis.eval(self, quad_point)
+        geo = self.geo_basis.eval(self, quad_point)
+        detJ, Jinv = self.geo_basis.compute_transform(geo)
+        data_phys = self.data_basis.transform(detJ, Jinv, data_xi)
+
+        for name in self.input_names:
+            # Eval basis at quad point
+            soln_xi = self.soln_basis[name].eval(self, quad_point)
+
+            # Perform the mapping from computational to physical coordinates (u)
+            soln_phys[name] = self.soln_basis[name].transform(detJ, Jinv, soln_xi)
 
         # Add the contributions directly to the Lagrangian
-        self.objective["obj"] = (
-            quad_weight
-            * detJ_u
-            * self.weakform(soln_phys_u, soln_phys_v, data=data_phys_u, geo=geo_u)
-        )
-
+        self.objective["obj"] = quad_weight * detJ * self.weakform(soln_phys, geo=geo)
         return
 
 
-def weakform(soln_u, soln_v, data=None, geo=None):
+def weakform(soln, data=None, geo=None):
+    soln_u = soln["u"]
+    soln_v = soln["v"]
+
     u = soln_u["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -410,10 +424,10 @@ def weakform(soln_u, soln_v, data=None, geo=None):
     comp1 = (
         basis.dot_product(ugrad, vgrad, n=2)
         + alpha * vvalue * uvalue
-        - f1 * uvalue
+        + f1 * uvalue
         + basis.dot_product(vgrad, ugrad, n=2)
         + alpha * uvalue * vvalue
-        - f2 * vvalue
+        + f2 * vvalue
     )
     return comp1
 
@@ -475,6 +489,6 @@ print(u)
 print(v)
 
 fig, ax = plt.subplots(ncols=2)
-mesh.plot(u, ax=ax[0])
-mesh.plot(v, ax=ax[1])
+mesh.plot(u, ax=ax[0], title="u")
+mesh.plot(v, ax=ax[1], title="v")
 plt.show()
