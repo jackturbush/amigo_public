@@ -118,14 +118,14 @@ class DirichletBCSource(am.Component):
         self.input_name = input_name
 
         for name in self.input_name:
-            self.add_input(name, value=1.0)
+            self.add_input(f"{name}0", value=1.0)
         self.add_input("lam", value=1.0)
         self.add_objective("obj")
         return
 
     def compute(self):
         for name in self.input_name:
-            self.objective["obj"] = self.inputs[name] * self.inputs["lam"]
+            self.objective["obj"] = self.inputs[f"{name}0"] * self.inputs["lam"]
         return
 
 
@@ -172,7 +172,7 @@ class DirichletDegreesOfFreedom:
 
             model.link(
                 f"src_soln.{input_name}",
-                f"src_{name}.{input_name}",
+                f"src_{name}.{input_name}0",
                 src_indices=conn,
             )
         return
@@ -654,6 +654,36 @@ symmetery_bc_map = {
         "end": False,
         "target": ["LINE2", "LINE4"],
         "flip": [False, True],
+        "scale": [1.0, -1.0],
+    },
+}
+
+bc_map_unified = {
+    "Dirichlet1": {
+        "type": "dirichlet",
+        "input": ["u"],
+        "start": False,
+        "end": False,
+        "target": ["LINE1"],
+        "flip": [False],
+        "scale": [1.0],
+    },
+    "Dirichlet3": {
+        "type": "dirichlet",
+        "input": ["u"],
+        "start": False,
+        "end": False,
+        "target": ["LINE3"],
+        "flip": [False],
+        "scale": [1.0],
+    },
+    "Symmetry_Line2_Line4": {
+        "type": "symmetry",
+        "input": ["u"],
+        "start": False,
+        "end": False,
+        "target": ["LINE2", "LINE4"],
+        "flip": [True, True],
         "scale": [1.0, -1.0],
     },
 }
