@@ -596,7 +596,7 @@ def weakform_NS_Magnet(soln, data=None, geo=None):
     x = geo["x"]["value"]
     y = geo["y"]["value"]
 
-    M = [1.0, 0.0]
+    M = [0.0, 1.0]
     f = basis.curl_2d(ugrad, M, n=2)
     wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2) - f)
     return wf
@@ -610,7 +610,7 @@ def weakform_SN_Magnet(soln, data=None, geo=None):
     x = geo["x"]["value"]
     y = geo["y"]["value"]
 
-    M = [1.0, 0.0]
+    M = [0.0, 0.0]
     f = basis.curl_2d(ugrad, M, n=2)
     wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2) - f)
     return wf
@@ -624,14 +624,7 @@ weakform_map = {
 }
 
 # Boundary Condition
-dirichlet_bc_map = {
-    "DirichletLine1": {
-        "type": "dirichlet",
-        "target": "LINE1",
-        "input": ["u"],
-        "start": True,
-        "end": True,
-    },
+dirichlet_bc_map_domain_1 = {
     "DirichletLine3": {
         "type": "dirichlet",
         "target": "LINE3",
@@ -655,87 +648,93 @@ dirichlet_bc_map = {
     },
 }
 
+dirichlet_bc_map_domain_2 = {
+    "DirichletLine1": {
+        "type": "dirichlet",
+        "target": "LINE1",
+        "input": ["u"],
+        "start": True,
+        "end": True,
+    },
+    "DirichletLine2": {
+        "type": "dirichlet",
+        "target": "LINE2",
+        "input": ["u"],
+        "start": False,
+        "end": False,
+    },
+    "DirichletLine4": {
+        "type": "dirichlet",
+        "target": "LINE4",
+        "input": ["u"],
+        "start": False,
+        "end": False,
+    },
+}
+
+# No symmetry bcs in each respective domain
 symmetery_bc_map = {
-    # "bruh": {
+    # "symm": {
     #     "input": ["u"],
     #     "start": False,
     #     "end": False,
     #     "target": ["LINE2", "LINE4"],
-    #     "flip": [False, True],
+    #     "flip": [False, False],
     #     "scale": [1.0, -1.0],
     # },
 }
 
-bc_map_unified = {
-    "Dirichlet1": {
-        "type": "dirichlet",
-        "input": ["u"],
-        "start": False,
-        "end": False,
-        "target": ["LINE1"],
-        "flip": [False],
-        "scale": [1.0],
-    },
-    "Dirichlet3": {
-        "type": "dirichlet",
-        "input": ["u"],
-        "start": False,
-        "end": False,
-        "target": ["LINE3"],
-        "flip": [False],
-        "scale": [1.0],
-    },
-    "Symmetry_Line2_Line4": {
-        "type": "symmetry",
-        "input": ["u"],
-        "start": False,
-        "end": False,
-        "target": ["LINE2", "LINE4"],
-        "flip": [True, True],
-        "scale": [1.0, -1.0],
-    },
-}
+# Define meshes
+meshes = ["weakform_test_mesh.inp", "weakform_test_mesh.inp"]
+dirichlet_bc_meshes = [dirichlet_bc_map_domain_1, dirichlet_bc_map_domain_2]
 
-
-# Initialize the spaces
+# Initialize the spaces (same for all domains)
 soln_space = basis.SolutionSpace({"u": "H1"})
 data_space = basis.SolutionSpace({"rho": "H1"})
 geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
 
-mesh = Mesh("weakform_test_mesh.inp")
-problem = Problem(
-    mesh,
-    soln_space,
-    weakform_map,
-    data_space=data_space,
-    geo_space=geo_space,
-    dirichlet_bc_map=dirichlet_bc_map,
-    sym_bc_map=symmetery_bc_map,
-    ndim=2,
-)
-model = problem.create_model("test")
+global_model = am.Model("global_model")
 
-model.build_module()
-model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
+for i, fname in enumerate(meshes):
+    mesh = Mesh(fname)
+    domain_name = f"Domain{i}"
+    problem = Problem(
+        mesh,
+        soln_space,
+        weakform_map,
+        data_space=data_space,
+        geo_space=geo_space,
+        dirichlet_bc_map=dirichlet_bc_meshes[i],
+        sym_bc_map=symmetery_bc_map,
+        ndim=2,
+    )
+    model = problem.create_model(domain_name)
+    global_model.add_model(domain_name, model)
+
+mesh_domain = Mesh("weakform_test_mesh.inp")
+nodes_line_1 = mesh_domain.get_bc_nodes("LINE1", "T3D2")
+nodes_line_3 = mesh_domain.get_bc_nodes("LINE3", "T3D2")
+nodes_line_3 = np.flip(nodes_line_3)
+
+# Add a continuity boundary condition to the global model
+for i in range(len(nodes_line_1)):
+    global_model.link(
+        f"Domain0.src_soln.u[{nodes_line_1[i]}]",
+        f"Domain1.src_soln.u[{nodes_line_3[i]}]",
+    )
+
+global_model.build_module()
+global_model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
 
 # print("num_variables = ", model.num_variables)
-p = model.get_problem()
+p = global_model.get_problem()
 
 # Set the problem data
-data = model.get_data_vector()
-data["src_geo.x"] = mesh.X[:, 0]
-data["src_geo.y"] = mesh.X[:, 1]
-
-# x = problem.create_vector()
-# mat = problem.create_matrix()
-# rhs = model.create_vector()
-# problem.gradient(1.0, x, rhs.get_vector())
-# problem.hessian(1.0, x, mat)
-
-# chol = am.SparseCholesky(mat)
-# flag = chol.factor()
-# print("flag = ", flag)
-# chol.solve(rhs.get_vector())
+data = global_model.get_data_vector()
+data["Domain0.src_geo.x"] = mesh.X[:, 0]
+data["Domain0.src_geo.y"] = mesh.X[:, 1]
+data["Domain1.src_geo.x"] = mesh.X[:, 0]
+data["Domain1.src_geo.y"] = mesh.X[:, 1]
 
 mat = p.create_matrix()
 alpha = 1.0
@@ -749,14 +748,20 @@ csr_mat = am.tocsr(mat)
 
 ans.get_array()[:] = spsolve(csr_mat, g.get_array())
 ans_local = ans
-u = ans_local.get_array()[model.get_indices("src_soln.u")]
-mesh.plot(u)
+u_domain0 = ans_local.get_array()[global_model.get_indices("Domain0.src_soln.u")]
+u_domain1 = ans_local.get_array()[global_model.get_indices("Domain1.src_soln.u")]
+fig, ax = plt.subplots(nrows=2)
+mesh.plot(u_domain0, ax=ax[0])
+mesh.plot(u_domain1, ax=ax[1])
 plt.show()
-# v = ans_local.get_array()[model.get_indices("src_soln.v")]
-# print(u)
-# print(v)
 
-# fig, ax = plt.subplots(ncols=2)
-# mesh.plot(u, ax=ax[0], title="u")
-# mesh.plot(v, ax=ax[1], title="v")
-# plt.show()
+# x = problem.create_vector()
+# mat = problem.create_matrix()
+# rhs = model.create_vector()
+# problem.gradient(1.0, x, rhs.get_vector())
+# problem.hessian(1.0, x, mat)
+
+# chol = am.SparseCholesky(mat)
+# flag = chol.factor()
+# print("flag = ", flag)
+# chol.solve(rhs.get_vector())
