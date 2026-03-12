@@ -200,9 +200,7 @@ class DegreesOfFreedom:
         for sp in ["H1", "const"]:
             names = self.space.get_names(sp)
 
-            #! Error -> can not add two of the same comps
-            # Move on to next space if the names are empty
-            if names == []:
+            if len(names) == 0:
                 continue
 
             # Create amigo source component with input names and geo names
@@ -216,23 +214,19 @@ class DegreesOfFreedom:
             dof_src = DofSource(input_names=input_names, data_names=data_names)
 
             # Add global mesh source component
-            nnodes = self.mesh.get_num_nodes()
-            nsurfaces = self.mesh.get_num_surfaces()
             if sp == "H1":
+                nnodes = self.mesh.get_num_nodes()
                 model.add_component(f"src_{self.name}", nnodes, dof_src)
-                # print(f"src_{self.name}")
 
             elif sp == "const":
+                nsurfaces = self.mesh.get_num_surfaces()
                 model.add_component(f"src_{self.name}", nsurfaces, dof_src)
-                # print(f"src_{self.name}")
 
     def link_dof(self, model, domain, etype, elem_name):
-        # names = self.space.get_names("H1")
         for sp in ["H1", "const"]:
             names = self.space.get_names(sp)
 
-            #! move on if the names are empty
-            if names == []:
+            if len(names) == 0:
                 continue
 
             if sp == "H1":
@@ -243,7 +237,6 @@ class DegreesOfFreedom:
                         f"{elem_name}.{name}",
                         src_indices=conn,
                     )
-                    # print(f"src_{self.name}.{name}", f"{elem_name}.{name}")
 
             elif sp == "const":
                 gmsh_surf_index = int(domain.replace("SURFACE", ""))
@@ -255,10 +248,6 @@ class DegreesOfFreedom:
                         f"{elem_name}.{name}[:]",
                     )
 
-                    # print(
-                    #     f"src_{self.name}.{name}[{surf_index}]",
-                    #     f"{elem_name}.{name}[:]",
-                    # )
         return
 
     def get_basis(self, etype):
@@ -267,8 +256,7 @@ class DegreesOfFreedom:
         for sp in ["H1", "const"]:
             names = self.space.get_names(sp)
 
-            #! move on if the names are empty
-            if names == []:
+            if len(names) == 0:
                 continue
 
             basis_list.append(self._get_basis(etype, sp, names, self.kind))
@@ -280,12 +268,12 @@ class DegreesOfFreedom:
             if space == "H1":
                 return basis.TriangleLagrangeBasis(1, names, kind=kind)
             elif space == "const":
-                return basis.Constant(names=names, kind=kind)
+                return basis.ConstantBasis(names=names, kind=kind)
         elif etype == "CPS4":
             if space == "H1":
                 return basis.QuadLagrangeBasis(1, names, kind=kind)
             elif space == "const":
-                return basis.Constant(names=names, kind=kind)
+                return basis.ConstantBasis(names=names, kind=kind)
         elif etype == "CPS6":
             if space == "H1":
                 return basis.TriangleLagrangeBasis(2, names, kind=kind)
@@ -343,8 +331,11 @@ class Mesh:
     def get_num_surfaces(self):
         return self.parser.get_num_surfaces()
 
-    def get_bc_nodes(self, name, etype):
-        return self.parser.get_edge_node(name, etype)
+    def get_bc_nodes(self, name, etype, flip=False):
+        conn = self.parser.get_edge_node(name, etype)
+        if flip == True:
+            np.flip(conn)
+        return conn
 
     def get_num_nodes_on_bc(self, name, etype):
         return self.parser.get_edge_node(name, etype).shape[0]
@@ -704,62 +695,6 @@ def weakform_coils(soln, data=None, geo=None):
     return wf
 
 
-# Know number of points along shared edge
-npts_shared = 20
-
-# Domain1 slides to the right by an integer value
-# 5 is the length of the shared edge
-slide_number = 10
-x_offset = slide_number * (5.0 / npts_shared)
-
-# Define a weakform map to domains
-# weakform_map_domain_0 = {
-#     "name": "Mesh0_weak_forms",
-#     "SURFACE1": weakform_air,
-#     "SURFACE2": weakform_air,
-#     "SURFACE3": weakform_NS_Magnet,
-# }
-
-# weakform_map_domain_1 = {
-#     "name": "Mesh1_weak_forms",
-#     "SURFACE1": weakform_air,
-#     "SURFACE2": weakform_NS_Magnet,
-#     "SURFACE3": weakform_air,
-# }
-
-# Boundary Condition
-# dirichlet_bc_map_domain_1 = {
-#     "DirichletLine3": {
-#         "type": "dirichlet",
-#         "target": "LINE3",
-#         "input": ["u"],
-#         "start": True,
-#         "end": True,
-#     },
-# }
-
-# dirichlet_bc_map_domain_2 = {
-#     "DirichletLine1": {
-#         "type": "dirichlet",
-#         "target": "LINE1",
-#         "input": ["u"],
-#         "start": True,
-#         "end": True,
-#     },
-# }
-
-# Lucky case: symm line tags are the same for both mesh
-# symmetery_bc_map = {
-#     "symm": {
-#         "input": ["u"],
-#         "start": False,
-#         "end": False,
-#         "target": ["LINE2", "LINE4"],
-#         "flip": [False, False],
-#         "scale": [1.0, 1.0],
-#     },
-# }
-
 # Define mesh objects
 meshes = {
     "Mesh0": Mesh("weakform_test_mesh.inp"),
@@ -797,7 +732,7 @@ symm_bc_meshes = {
             "end": False,
             "target": ["LINE2", "LINE4"],
             "flip": [False, False],
-            "scale": [1.0, 1.0],
+            "scale": [1.0, -1.0],
         },
     },
     "Mesh1": {
@@ -807,7 +742,7 @@ symm_bc_meshes = {
             "end": False,
             "target": ["LINE2", "LINE4"],
             "flip": [False, False],
-            "scale": [1.0, 1.0],
+            "scale": [1.0, -1.0],
         },
     },
 }
@@ -858,9 +793,20 @@ nodes_line_1 = mesh0.get_bc_nodes("LINE1", "T3D2")
 nodes_line_3 = mesh1.get_bc_nodes("LINE3", "T3D2")
 nodes_line_3 = np.flip(nodes_line_3)
 
+# Know number of points along shared edge
+npts_shared = 20
+
+# Domain1 slides to the right by an integer value
+# 5 is the length of the shared edge
+slide_number = 10
+x_offset = slide_number * (5.0 / npts_shared)
+
+
 # Add continuity BCs to the global model
 nodes_line_1_shared = nodes_line_1[slide_number:]
-nodes_line_3_shared = nodes_line_3[0:-slide_number]
+nodes_line_3_shared = (
+    nodes_line_3[:] if slide_number == 0 else nodes_line_3[0:-slide_number]
+)
 for i in range(len(nodes_line_1_shared)):
     main.link(
         f"Mesh0.src_soln.u[{nodes_line_1_shared[i]}]",
@@ -868,7 +814,9 @@ for i in range(len(nodes_line_1_shared)):
     )
 
 # BCs for the hanging edges
-nodes_line_1_hanging = nodes_line_1[0:slide_number]
+nodes_line_1_hanging = (
+    nodes_line_1[:] if slide_number == 0 else nodes_line_1[0:slide_number]
+)
 nodes_line_3_hanging = nodes_line_3[-slide_number:]
 for i in range(len(nodes_line_1_hanging)):
     main.link(
@@ -915,6 +863,7 @@ u_domain1 = ans_local.get_array()[main.get_indices("Mesh1.src_soln.u")]
 
 max_domain = np.max(np.maximum(u_domain0, u_domain1))
 min_domain = np.min(np.minimum(u_domain0, u_domain1))
+print(max_domain, min_domain)
 
 fig, ax = plt.subplots()
 mesh.plot(
