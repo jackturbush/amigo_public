@@ -1,10 +1,8 @@
 import numpy as np
-from fem import (
-    Mesh,
-    Problem,
-)
-import basis
 import amigo as am
+from amigo.fem import dot_product, SolutionSpace, Problem, Mesh
+
+from pathlib import Path
 from scipy.sparse.linalg import spsolve
 import matplotlib.pyplot as plt
 
@@ -41,7 +39,7 @@ def weakform(soln, data=None, geo=None):
     pi = np.pi
     f = 8 * pi**2 * am.sin(2 * x * pi) * am.sin(2 * y * pi)
 
-    wf = 0.5 * basis.dot_product(ugrad, ugrad, n=2) + f * uvalue
+    wf = 0.5 * dot_product(ugrad, ugrad, n=2) + f * uvalue
     return wf
 
 
@@ -119,18 +117,15 @@ for i, lc in enumerate(lc_vals):
     }
 
     # Initialize the spaces (same for all domains)
-    soln_space = basis.SolutionSpace({"u": "H1"})
-    data_space = basis.SolutionSpace({})
-    geo_space = basis.SolutionSpace({"x": "H1", "y": "H1"})
+    soln_space = SolutionSpace({"u": "H1"})
+    data_space = SolutionSpace({})
+    geo_space = SolutionSpace({"x": "H1", "y": "H1"})
 
     # Define the mesh object
     mesh = meshes["Mesh"]
 
-    nelems = mesh.get_num_elements("SURFACE1", elem_type)
-    number_elems[i] = nelems
-
     # Define the global amigo model
-    global_model = am.Model("global_model")
+    model = am.Model("mms_module")
 
     # Create an amigo model for each mesh
     for mesh_name, mesh in meshes.items():
@@ -143,16 +138,17 @@ for i, lc in enumerate(lc_vals):
             dirichlet_bc_map=dirichlet_bc_meshes[mesh_name],
             output_map=output_map,
         )
-        model = problem.create_model(mesh_name)
-        global_model.add_model(mesh_name, model)
+        sub_model = problem.create_model(mesh_name)
+        model.add_model(mesh_name, sub_model)
 
     # Build the model
-    global_model.build_module()
-    global_model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
-    p = global_model.get_problem()
+    source_dir = Path(__file__).resolve().parent
+    model.build_module(source_dir=source_dir)
+    model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
+    p = model.get_problem()
 
     # Set the problem data
-    data = global_model.get_data_vector()
+    data = model.get_data_vector()
     data["Mesh.src_geo.x"] = mesh.X[:, 0]
     data["Mesh.src_geo.y"] = mesh.X[:, 1]
 
@@ -168,10 +164,10 @@ for i, lc in enumerate(lc_vals):
 
     ans.get_array()[:] = spsolve(csr_mat, g.get_array())
     ans_local = ans
-    u = ans_local.get_array()[global_model.get_indices("Mesh.src_soln.u")]
+    u = ans_local.get_array()[model.get_indices("Mesh.src_soln.u")]
     u_exact = exact(x=mesh.X[:, 0], y=mesh.X[:, 1])
 
-    output = global_model.create_output_vector()
+    output = model.create_output_vector()
     p.compute_output(ans, output.get_vector())
 
     print("The torque is: ", output["Mesh.outputs.torque[0]"])
@@ -185,6 +181,3 @@ for i, lc in enumerate(lc_vals):
     norms[i] = frobenius_norm
 
     plt.show()
-
-# np.save(f"norms_" + elem_type, norms)
-# np.save(f"number_elems_" + elem_type, number_elems)

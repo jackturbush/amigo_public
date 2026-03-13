@@ -1,11 +1,10 @@
 import amigo as am
 import numpy as np
-import re
-import basis
-import matplotlib as mpl
+from . import basis
+from .connectivity import InpParser
+
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
-from connectivity import InpParser
 from matplotlib.collections import PolyCollection
 
 
@@ -744,74 +743,3 @@ class FiniteElementOutput(am.Component):
             else:
                 self.outputs[name] = 0.0
         return
-
-
-def weakform_air(soln, data=None, geo=None):
-    u = soln["u"]
-    uvalue = u["value"]
-    ugrad = u["grad"]
-
-    x = geo["x"]["value"]
-    y = geo["y"]["value"]
-
-    wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2))
-    return wf
-
-
-def weakform_NS_Magnet(soln, data=None, geo=None):
-    u = soln["u"]
-    uvalue = u["value"]
-    ugrad = u["grad"]
-
-    x = geo["x"]["value"]
-    y = geo["y"]["value"]
-
-    M = [0.0, 1.0]
-    f = basis.curl_2d(ugrad, M, n=2)
-    wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2) - f)
-    return wf
-
-
-def weakform_SN_Magnet(soln, data=None, geo=None):
-    u = soln["u"]
-    uvalue = u["value"]
-    ugrad = u["grad"]
-
-    x = geo["x"]["value"]
-    y = geo["y"]["value"]
-
-    M = [0.0, -1.0]
-    f = basis.curl_2d(ugrad, M, n=2)
-    wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2) - f)
-    return wf
-
-
-def weakform_coils(soln, data=None, geo=None):
-    u = soln["u"]
-    uvalue = u["value"]
-    ugrad = u["grad"]
-
-    Jz = data["Jz"]["value"]
-    f = Jz * uvalue
-
-    wf = 0.5 * (basis.dot_product(ugrad, ugrad, n=2) - f)
-    return wf
-
-
-def torque_output(soln, data=None, geo=None):
-    u = soln["u"]
-    uvalue = u["value"]
-    ugrad = u["grad"]
-    x = geo["x"]["value"]
-    y = geo["y"]["value"]
-
-    Bx = ugrad[1]  # du/dy
-    By = -ugrad[0]  # -du/dx
-
-    ag = 1.0  # air gap width
-    L = 1.0  # Ro-Ri
-    mu0 = 4 * np.pi * 1e-7
-
-    torque = L * (1 / mu0) * (L / ag) * (Bx * By)
-
-    return {"torque": torque}
