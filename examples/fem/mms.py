@@ -142,8 +142,8 @@ for i, lc in enumerate(lc_vals):
         model.add_model(mesh_name, sub_model)
 
     # Build the model
-    source_dir = Path(__file__).resolve().parent
-    model.build_module(source_dir=source_dir)
+    # source_dir = Path(__file__).resolve().parent
+    model.build_module()  # source_dir=source_dir)
     model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
     p = model.get_problem()
 
@@ -175,9 +175,8 @@ for i, lc in enumerate(lc_vals):
     mesh.plot(u)
 
     delta_u = u - u_exact
-    frobenius_norm = np.linalg.norm(delta_u)
-    print(f"\n||err||2 = {frobenius_norm:4e}")
-    print(f"nelems: {nelems}")
-    norms[i] = frobenius_norm
+    norm = np.linalg.norm(delta_u)
+    print(f"\n||err||2 = {norm:4e}")
+    norms[i] = norm
 
     plt.show()
