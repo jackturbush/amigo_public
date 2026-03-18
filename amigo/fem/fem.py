@@ -28,7 +28,7 @@ class DofSource(am.Component):
 
 
 class SymmBCSource(am.Component):
-    def __init__(self, input_name=[], scale=[1.0, 1.0]):
+    def __init__(self, input_name=[], scale=[]):
         super().__init__()
 
         self.input_name = input_name
@@ -59,19 +59,32 @@ class SymmetryDegreesOfFreedom:
         self.bc = bc
         return
 
-    def _get_bc_nodes(self, targets, start=True, end=True):
+    def _get_bc_nodes(self, targets, start, end):
         all_nodes = []
         for target in targets:
             nodes = self.mesh.get_bc_nodes(target, "T3D2")
-
-            if not start:
-                nodes = nodes[1:]
-            if not end:
-                nodes = nodes[:-1]
-
             all_nodes.extend(nodes)
 
-        return list(dict.fromkeys(all_nodes))  # preserve order
+        unique = list(dict.fromkeys(all_nodes))  # preserve order
+
+        if not start:
+            unique = unique[1:]
+        if not end:
+            unique = unique[:-1]
+
+        return unique
+
+    def _reorder_nodes(self, nodes_left, nodes_right):
+        nodes_left = np.array(nodes_left)
+        nodes_right = np.array(nodes_right)
+
+        y_left = self.mesh.X[nodes_left, 1]
+        y_right = self.mesh.X[nodes_right, 1]
+
+        idx_left = np.argsort(y_left)
+        idx_right = np.argsort(y_right)
+
+        return nodes_left[idx_left], nodes_right[idx_right]
 
     def add_and_link_source(self, model):
         targets = self.bc["target"]
@@ -82,33 +95,35 @@ class SymmetryDegreesOfFreedom:
 
         left_target_lines = targets[0]
         right_target_lines = targets[1]
-        nodes_left = self._get_bc_nodes(left_target_lines, start=start, end=end)
-        nodes_right = self._get_bc_nodes(right_target_lines, start=start, end=end)
+        nodes_left = self._get_bc_nodes(left_target_lines, start, end)
+        nodes_right = self._get_bc_nodes(right_target_lines, start, end)
 
         if len(nodes_left) != len(nodes_right):
             raise Exception(f"nnodes left != nnodes right")
+
+        # Reorder the nodes to match
+        nodes_a, nodes_b = self._reorder_nodes(nodes_left, nodes_right)
 
         bc_src = SymmBCSource(input_names, scale=scale)
 
         if len(nodes_left) > 0:
             for name in input_names:
-                for name in input_names:
-                    model.add_component(
-                        f"src_{name}",
-                        len(nodes_left),
-                        bc_src,
-                    )
+                model.add_component(
+                    f"src_{self.bc_name}",
+                    len(nodes_left),
+                    bc_src,
+                )
 
-                    model.link(
-                        f"src_soln.{name}",
-                        f"src_{self.bc_name}.{name}0",
-                        src_indices=nodes_left,
-                    )
-                    model.link(
-                        f"src_soln.{name}",
-                        f"src_{self.bc_name}.{name}1",
-                        src_indices=nodes_right,
-                    )
+                model.link(
+                    f"src_soln.{name}",
+                    f"src_{self.bc_name}.{name}0",
+                    src_indices=nodes_a,
+                )
+                model.link(
+                    f"src_soln.{name}",
+                    f"src_{self.bc_name}.{name}1",
+                    src_indices=nodes_b,
+                )
         return
 
 
@@ -137,7 +152,7 @@ class DirichletDegreesOfFreedom:
         self.bc = bc
         return
 
-    def _get_bc_nodes(self, targets, start=True, end=True):
+    def _get_bc_nodes(self, targets, start, end):
         all_nodes = []
         for target in targets:
             nodes = self.mesh.get_bc_nodes(target, "T3D2")
@@ -155,7 +170,7 @@ class DirichletDegreesOfFreedom:
         targets = self.bc["target"]
         start = self.bc["start"]
         end = self.bc["end"]
-        nodes = self._get_bc_nodes(targets, start=start, end=end)
+        nodes = self._get_bc_nodes(targets, start, end)
 
         input_names = self.bc["input"]
         bc_src = DirichletBCSource(input_name=input_names)
@@ -332,10 +347,8 @@ class Mesh:
     def get_num_surfaces(self):
         return self.parser.get_num_surfaces()
 
-    def get_bc_nodes(self, name, etype, flip=False):
+    def get_bc_nodes(self, name, etype):
         conn = self.parser.get_edge_node(name, etype)
-        if flip == True:
-            np.flip(conn)
         return conn
 
     def get_num_nodes_on_bc(self, name, etype):
@@ -437,6 +450,22 @@ class Mesh:
 
         return np.vstack(cs)
 
+    def plot_tri_mesh_region(self, name, etype, ax, color, label):
+        X2d = self.X[:, 0:2]  # Reduce to 2d (x,y coords only)
+        gmsh_conn = self.get_conn(name, etype)
+        polygons = [X2d[row] for row in gmsh_conn]
+
+        coll = PolyCollection(
+            polygons,
+            facecolors=color,
+            edgecolors="k",
+            linewidths=0.01,
+            label=label,
+            antialiaseds=False,
+        )
+        ax.add_collection(coll)
+        return
+
 
 # Needs to take in bcs here
 class Problem:
@@ -492,6 +521,8 @@ class Problem:
                 )
             elif bc["type"] == "symmetry":
                 self.symm_dof.append(SymmetryDegreesOfFreedom(name, self.mesh, bc))
+            else:
+                raise Exception(f"{bc["type"]} not recognized")
 
         return
 
@@ -562,10 +593,8 @@ class Problem:
         for dof in self.dirichlet_dof:
             dof.add_and_link_source(model)
 
-        # Add symmetric bcs
-        # for dof in self.symm_dof:
-        #     dof.add_bc_source(model)
-        #     dof.link_bc_dof(model)
+        for dof in self.symm_dof:
+            dof.add_and_link_source(model)
 
         # Make a list of all of the outputs
         all_outputs = []
