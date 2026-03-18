@@ -386,16 +386,14 @@ upper["dyn.u[:, 1]"] = np.radians(90.0) / scaling["beta"]
 opt = am.Optimizer(model, x, lower=lower, upper=upper)
 data = opt.optimize(
     {
-        "initial_barrier_param": 0.1,
-        "convergence_tolerance": 1e-10,
-        "max_line_search_iterations": 4,  # 30,  # Reasonable for intermediate problem
-        "max_iterations": 500,  # Sufficient iterations
-        "init_affine_step_multipliers": True,  # Enable for better scaling
-        # Use the new heuristic barrier parameter update
-        "barrier_strategy": "heuristic",
-        "heuristic_barrier_gamma": 0.1,  # Scale factor γ
-        "heuristic_barrier_r": 0.95,  # Steplength parameter r
-        "verbose_barrier": True,  # Show ξ and complementarity values
+        "initial_barrier_param": 1.0,
+        "max_iterations": 500,
+        "fraction_to_boundary": 0.995,
+        "max_line_search_iterations": 30,
+        "init_least_squares_multipliers": True,
+        "acceptable_tol": 1e-7,
+        "acceptable_iter": 15,
+        "filter_line_search": True,
     }
 )
 
