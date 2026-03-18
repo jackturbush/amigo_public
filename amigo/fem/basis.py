@@ -493,7 +493,8 @@ class QuadQuadrature(Quadrature):
         wt = self.weights[n] * self.weights[m]
         pt = [self.points[n], self.points[m]]
         return wt, pt
-    
+
+
 class ReducedQuadQuadrature(Quadrature):
     def __init__(self):
         self.args = [{"n": 0, "m": 0}]

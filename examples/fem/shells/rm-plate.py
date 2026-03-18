@@ -159,8 +159,8 @@ w = xm["src_soln.w"]
 tx = xm["src_soln.tx"]
 ty = xm["src_soln.ty"]
 
-np.save('w_reducedshear.npy',w)
-w_shearlocked = np.load('w_shearlocked.npy')
+np.save("w_reducedshear.npy", w)
+w_shearlocked = np.load("w_shearlocked.npy")
 mesh.plot_3d(w)
-print(np.max(np.abs(((w-w_shearlocked)))))
+print(np.max(np.abs(((w - w_shearlocked)))))
 plt.show()
