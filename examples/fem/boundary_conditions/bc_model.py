@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-def weakform1(soln, data=None, geo=None):
+def potential(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -14,7 +14,7 @@ def weakform1(soln, data=None, geo=None):
     return wf
 
 
-def weakform2(soln, data=None, geo=None):
+def potential(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -37,9 +37,9 @@ args = parser.parse_args()
 # Define mesh objects
 meshes = {"Mesh0": Mesh("plate.inp")}
 
-weakform_map = {
+potential_map = {
     "Mesh0": {
-        "air": {"target": ["SURFACE1"], "weakform": weakform2},
+        "air": {"target": ["SURFACE1"], "potential": potential},
     }
 }
 
@@ -57,7 +57,7 @@ bc_map_mesh0 = {
         "end": False,
     },
     "SymmMesh0": {
-        "type": "symmetric",
+        "type": "symmetry",
         "input": ["u"],
         "start": False,
         "end": False,
@@ -84,7 +84,7 @@ for mesh_name, mesh in meshes.items():
         soln_space,
         data_space,
         geo_space,
-        weakform_map=weakform_map[mesh_name],
+        potential_map=potential_map[mesh_name],
         bc_map=bc_map[mesh_name],
     )
     sub_model = problem.create_model(mesh_name)

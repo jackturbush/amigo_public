@@ -156,25 +156,17 @@ class DirichletDegreesOfFreedom:
         self.bc = bc
         return
 
-    def _get_bc_nodes(self, targets, start, end):
+    def _get_bc_nodes(self, targets):
         all_nodes = []
         for target in targets:
             nodes = self.mesh.get_bc_nodes(target, "T3D2")
-
-            if not start:
-                nodes = nodes[1:]
-            if not end:
-                nodes = nodes[:-1]
-
             all_nodes.append(nodes)
 
         return np.unique(all_nodes)
 
     def add_and_link_source(self, model):
         targets = self.bc["target"]
-        start = self.bc["start"]
-        end = self.bc["end"]
-        nodes = self._get_bc_nodes(targets, start, end)
+        nodes = self._get_bc_nodes(targets)
 
         input_names = self.bc["input"]
         bc_src = DirichletBCSource(self.bc_name, input_names=input_names)

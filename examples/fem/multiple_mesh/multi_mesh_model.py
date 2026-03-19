@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-def weakform1(soln, data=None, geo=None):
+def potential_1(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -14,7 +14,7 @@ def weakform1(soln, data=None, geo=None):
     return wf
 
 
-def weakform2(soln, data=None, geo=None):
+def potential_2(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -45,11 +45,9 @@ bc_map_mesh0 = {
         "type": "dirichlet",
         "target": ["LINE3"],
         "input": ["u"],
-        "start": True,
-        "end": True,
     },
     "SymmMesh0": {
-        "type": "symmetric",
+        "type": "symmetry",
         "input": ["u"],
         "start": False,
         "end": False,
@@ -64,11 +62,9 @@ bc_map_mesh1 = {
         "type": "dirichlet",
         "target": ["LINE1"],
         "input": ["u"],
-        "start": True,
-        "end": True,
     },
     "SymmMesh0": {
-        "type": "symmetric",
+        "type": "symmetry",
         "input": ["u"],
         "start": False,
         "end": False,
@@ -81,14 +77,14 @@ bc_map_mesh1 = {
 bc_map = {"Mesh0": bc_map_mesh0, "Mesh1": bc_map_mesh1}
 
 # Weak form mapping for each mesh
-weakform_map = {
+potential_map = {
     "Mesh0": {
-        "air": {"target": ["SURFACE1"], "weakform": weakform1},
-        "coil": {"target": ["SURFACE2", "SURFACE3"], "weakform": weakform2},
+        "air": {"target": ["SURFACE1"], "potential": potential_1},
+        "coil": {"target": ["SURFACE2", "SURFACE3"], "potential": potential_2},
     },
     "Mesh1": {
-        "air": {"target": ["SURFACE1"], "weakform": weakform1},
-        "coil": {"target": ["SURFACE2", "SURFACE3"], "weakform": weakform2},
+        "air": {"target": ["SURFACE1"], "potential": potential_1},
+        "coil": {"target": ["SURFACE2", "SURFACE3"], "potential": potential_2},
     },
 }
 
@@ -107,7 +103,7 @@ for mesh_name, mesh in meshes.items():
         soln_space,
         data_space,
         geo_space,
-        weakform_map=weakform_map[mesh_name],
+        potential_map=potential_map[mesh_name],
         bc_map=bc_map[mesh_name],
     )
     model = problem.create_model(mesh_name)

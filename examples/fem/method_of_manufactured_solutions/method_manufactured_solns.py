@@ -24,7 +24,7 @@ def output(soln, data=None, geo=None):
     return {"integral": uvalue}
 
 
-def weakform(soln, data=None, geo=None):
+def potential(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -51,56 +51,39 @@ parser.add_argument(
 args = parser.parse_args()
 
 meshes = {"Mesh": Mesh("plate.inp")}
-dirichlet_bc_meshes = {
+bc_map = {
     "Mesh": {
         "DirichletLine1": {
             "type": "dirichlet",
-            "target": "LINE1",
+            "target": [
+                "LINE1",
+                "LINE2",
+                "LINE3",
+                "LINE4",
+            ],
             "input": ["u"],
-            "start": True,
-            "end": True,
-        },
-        "DirichletLine2": {
-            "type": "dirichlet",
-            "target": "LINE2",
-            "input": ["u"],
-            "start": False,
-            "end": False,
-        },
-        "DirichletLine3": {
-            "type": "dirichlet",
-            "target": "LINE3",
-            "input": ["u"],
-            "start": True,
-            "end": True,
-        },
-        "DirichletLine4": {
-            "type": "dirichlet",
-            "target": "LINE4",
-            "input": ["u"],
-            "start": False,
-            "end": False,
         },
     },
 }
 
-# Symmetric BCs mapping for each mesh
-symm_bc_meshes = {"Mesh": {}}
-
 # Weak form mapping for each mesh
-weakform_map = {
-    "mms": {
-        "target": ["SURFACE1"],
-        "weakform": weakform,
+potential_map = {
+    "Mesh": {
+        "physics": {
+            "target": ["SURFACE1"],
+            "potential": potential,
+        },
     }
 }
 
-wf_mesh_map = {
-    "Mesh": weakform_map,
-}
-
 output_map = {
-    "integral": {"names": ["integral"], "target": ["SURFACE1"], "function": output},
+    "Mesh": {
+        "integral": {
+            "names": ["integral"],
+            "target": ["SURFACE1"],
+            "function": output,
+        },
+    },
 }
 
 # Initialize the spaces (same for all domains)
@@ -121,9 +104,9 @@ for mesh_name, mesh in meshes.items():
         soln_space,
         data_space,
         geo_space,
-        weakform_map=wf_mesh_map[mesh_name],
-        dirichlet_bc_map=dirichlet_bc_meshes[mesh_name],
-        output_map=output_map,
+        potential_map=potential_map[mesh_name],
+        bc_map=bc_map[mesh_name],
+        output_map=output_map[mesh_name],
     )
     sub_model = problem.create_model(mesh_name)
     model.add_model(mesh_name, sub_model)

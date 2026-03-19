@@ -13,7 +13,7 @@ def output(soln, data=None, geo=None):
     return {"integrand": uvalue}
 
 
-def weakform(soln, data=None, geo=None):
+def potential(soln, data=None, geo=None):
     u = soln["u"]
     uvalue = u["value"]
     ugrad = u["grad"]
@@ -40,9 +40,12 @@ args = parser.parse_args()
 # Define mesh objects
 meshes = {"Mesh0": Mesh("plate.inp")}
 
-weakform_map = {
+potential_map = {
     "Mesh0": {
-        "air": {"target": ["SURFACE1"], "weakform": weakform},
+        "air": {
+            "target": ["SURFACE1"],
+            "potential": potential,
+        },
     }
 }
 
@@ -60,8 +63,6 @@ bc_map_mesh0 = {
             "LINE8",
         ],
         "input": ["u"],
-        "start": True,
-        "end": True,
     }
 }
 bc_map = {"Mesh0": bc_map_mesh0}
@@ -92,7 +93,7 @@ for mesh_name, mesh in meshes.items():
         soln_space,
         data_space,
         geo_space,
-        weakform_map=weakform_map[mesh_name],
+        potential_map=potential_map[mesh_name],
         bc_map=bc_map[mesh_name],
         output_map=output_map[mesh_name],
     )
