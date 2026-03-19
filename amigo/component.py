@@ -537,6 +537,10 @@ class OutputSet:
     def __setitem__(self, name, expr):
         if name not in self.outputs:
             raise KeyError(f"{name} not the declared outputs")
+
+        if isinstance(expr, float):
+            expr = Expr(ConstNode(value=expr))
+
         self.outputs[name].expr[self.arg_index] = expr
         return
 
