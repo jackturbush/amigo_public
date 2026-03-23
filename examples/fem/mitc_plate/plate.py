@@ -144,28 +144,24 @@ if args.build:
     model.build_module()
 
 model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
-p = model.get_problem()
 
-# Create the model vector
-xm = model.create_vector()
-
-# Solve
-x = xm.get_vector()
-mat = p.create_matrix()
-g = p.create_vector()
+x = model.create_vector()
+g = model.create_vector()
+mat = model.create_matrix()
 
 print("Evaluating the Hessian...")
-p.hessian(1.0, x, mat)  # assembles K
-p.gradient(1.0, x, g)  # assembles f (body force / BC terms)
+model.eval_gradient(x, g)
+model.eval_hessian(x, mat)
 
+# Solve the equations
 print("Solving...")
 K = am.tocsr(mat)
-x.get_array()[:] = spsolve(K, g.get_array())
+x[:] = spsolve(K, g[:])
 
 print("Plotting...")
-w = xm["src_soln.w"]
-tx = xm["src_soln.tx"]
-ty = xm["src_soln.ty"]
+w = x["src_soln.w"]
+tx = x["src_soln.tx"]
+ty = x["src_soln.ty"]
 
 fig, ax = plt.subplots(1, 3, figsize=(8, 3))
 for index, soln in enumerate([w, tx, ty]):

@@ -28,7 +28,7 @@ class DofSource(am.Component):
         return
 
 
-class DirichletBC(am.Component):
+class DirichletBC_potential(am.Component):
     def __init__(self, name, input_names=[]):
         super().__init__(name=name)
 
@@ -45,11 +45,32 @@ class DirichletBC(am.Component):
         return
 
 
+class DirichletBC_weakform(am.Component):
+    def __init__(self, name, input_names=[]):
+        super().__init__(name=name)
+
+        self.input_names = input_names
+        for name in self.input_names:
+            self.add_input(name)
+            self.add_input(f"lam_{name}")
+
+            self.add_constraint(f"res_bc_{name}")
+            self.add_constraint(f"res_disp_{name}")
+
+        return
+
+    def compute(self):
+        for name in self.input_names:
+            self.constraints[f"res_bc_{name}"] = self.inputs[f"{name}"]
+            self.constraints[f"res_disp_{name}"] = self.inputs[f"lam_{name}"]
+        return
+
 class DirichletDegreesOfFreedom:
-    def __init__(self, bc_name, mesh, bc={}):
+    def __init__(self, bc_name, mesh, bc={}, integrand_formulation="potential"):
         self.bc_name = bc_name
         self.mesh = mesh
         self.bc = bc
+        self.integrand_formulation = integrand_formulation
         return
 
     def _get_bc_nodes(self, targets):
@@ -65,7 +86,10 @@ class DirichletDegreesOfFreedom:
         nodes = self._get_bc_nodes(targets)
 
         input_names = self.bc["input"]
-        bc_src = DirichletBC(self.bc_name, input_names=input_names)
+        if self.integrand_formulation == "weak":
+            bc_src = DirichletBC_weakform(self.bc_name, input_names=input_names)
+        else:
+            bc_src = DirichletBC_potential(self.bc_name, input_names=input_names)
 
         if len(nodes) > 0:
             model.add_component(
@@ -79,6 +103,13 @@ class DirichletDegreesOfFreedom:
                     f"src_soln.{name}",
                     f"src_{self.bc_name}.{name}",
                     src_indices=nodes,
+                )
+
+                if self.integrand_formulation == "weak":
+                    model.link(
+                        f"src_multiplier.res_{name}",
+                        f"src_{self.bc_name}.res_disp_{name}",
+                        src_indices=nodes,
                 )
 
         return
@@ -215,7 +246,7 @@ class DegreesOfFreedom:
             elif self.kind == "data":
                 data_names = names
             elif self.kind == "multiplier":
-                con_names = names
+                con_names = [f"res_{name}" for name in names]
 
             dof_src = DofSource(
                 input_names=input_names, con_names=con_names, data_names=data_names
@@ -233,6 +264,10 @@ class DegreesOfFreedom:
     def link_dof(self, model, domain, etype, elem_name):
         for sp in ["H1", "const"]:
             names = self.space.get_names(sp)
+
+            if self.kind == "multiplier":
+                con_names = [f"res_{name}" for name in names]
+                names = con_names
 
             if len(names) == 0:
                 continue
@@ -607,7 +642,7 @@ class Problem:
             bc = bc_map[name]
             if bc["type"] == "dirichlet":
                 self.dirichlet_dof.append(
-                    DirichletDegreesOfFreedom(name, self.mesh, bc)
+                    DirichletDegreesOfFreedom(name, self.mesh, bc, self.integrand_formulation)
                 )
             elif bc["type"] == "symmetry":
                 self.symm_dof.append(SymmetryDegreesOfFreedom(name, self.mesh, bc))

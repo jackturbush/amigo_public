@@ -147,7 +147,7 @@ class Basis:
                 comp.add_data(name, shape=(self.nnodes,))
         elif self.kind == "multiplier":
             for name in self.names:
-                comp.add_constraints(name, shape=(self.nnodes,))
+                comp.add_constraint(f"res_{name}", shape=(self.nnodes,))
 
 
 class ConstantBasis(Basis):
@@ -171,7 +171,7 @@ class ConstantBasis(Basis):
             elif self.kind == "data":
                 u = comp.data[name]
             elif self.kind == "multiplier":
-                u = comp.constraints.get_multipliers()[name]
+                u = comp.constraints.get_multipliers()[f"res_{name}"]
 
             soln[name] = {
                 "value": u[0],
@@ -226,7 +226,7 @@ class LagrangeBasis1D(Basis):
             elif self.kind == "data":
                 u = comp.data[name]
             elif self.kind == "multiplier":
-                u = comp.constraints.get_multipliers()[name]
+                u = comp.constraints.get_multipliers()[f"res_{name}"]
 
             soln[name] = {
                 "value": dot_product(u, N, n=self.nnodes),
@@ -337,7 +337,7 @@ class TriangleLagrangeBasis(LagrangeBasis2D):
             elif self.kind == "data":
                 u = comp.data[name]
             elif self.kind == "multiplier":
-                u = comp.constraints.get_multipliers()[name]
+                u = comp.constraints.get_multipliers()[f"res_{name}"]
 
             soln[name] = {
                 "value": dot_product(u, N, n=self.nnodes),
@@ -420,7 +420,7 @@ class QuadLagrangeBasis(LagrangeBasis2D):
             elif self.kind == "data":
                 u = comp.data[name]
             elif self.kind == "multiplier":
-                u = comp.constraints.get_multipliers()[name]
+                u = comp.constraints.get_multipliers()[f"res_{name}"]
 
             soln[name] = {
                 "value": dot_product(u, N, n=self.nnodes),

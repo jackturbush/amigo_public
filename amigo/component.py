@@ -1052,7 +1052,6 @@ class Component:
                 lhs = []
 
             # Create the expression builder
-            print(rhs, lhs)
             vars = []
             builder = ExprBuilder(consts, data, inputs, vars, rhs=rhs, lhs=lhs)
 
