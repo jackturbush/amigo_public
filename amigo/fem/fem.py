@@ -28,7 +28,63 @@ class DofSource(am.Component):
         return
 
 
-class SymmBCSource(am.Component):
+class DirichletBC(am.Component):
+    def __init__(self, name, input_names=[]):
+        super().__init__(name=name)
+
+        self.input_names = input_names
+        for name in self.input_names:
+            self.add_input(f"{name}")
+            self.add_constraint(f"res_{name}")
+
+        return
+
+    def compute(self):
+        for name in self.input_names:
+            self.constraints[f"res_{name}"] = self.inputs[f"{name}"]
+        return
+
+
+class DirichletDegreesOfFreedom:
+    def __init__(self, bc_name, mesh, bc={}):
+        self.bc_name = bc_name
+        self.mesh = mesh
+        self.bc = bc
+        return
+
+    def _get_bc_nodes(self, targets):
+        all_nodes = []
+        for target in targets:
+            nodes = self.mesh.get_bc_nodes(target, "T3D2")
+            all_nodes.append(nodes)
+
+        return np.unique(all_nodes)
+
+    def add_and_link_source(self, model):
+        targets = self.bc["target"]
+        nodes = self._get_bc_nodes(targets)
+
+        input_names = self.bc["input"]
+        bc_src = DirichletBC(self.bc_name, input_names=input_names)
+
+        if len(nodes) > 0:
+            model.add_component(
+                f"src_{self.bc_name}",
+                len(nodes),
+                bc_src,
+            )
+
+            for name in input_names:
+                model.link(
+                    f"src_soln.{name}",
+                    f"src_{self.bc_name}.{name}",
+                    src_indices=nodes,
+                )
+
+        return
+
+
+class SymmBC(am.Component):
     def __init__(self, input_name=[], scale=[]):
         super().__init__()
 
@@ -38,18 +94,18 @@ class SymmBCSource(am.Component):
         for name in self.input_name:
             self.add_input(f"{name}0", value=1.0)
             self.add_input(f"{name}1", value=1.0)
-        self.add_input("lam", value=1.0)
-        self.add_objective("obj")
+            self.add_constraint(f"res_{name}")
+
         return
 
     def compute(self):
         scale_node_0 = self.scale[0]
         scale_node_1 = self.scale[1]
         for name in self.input_name:
-            self.objective["obj"] = (
+            self.constraints[f"res_{name}"] = (
                 scale_node_0 * self.inputs[f"{name}0"]
                 + scale_node_1 * self.inputs[f"{name}1"]
-            ) * self.inputs["lam"]
+            )
         return
 
 
@@ -105,7 +161,7 @@ class SymmetryDegreesOfFreedom:
         # Reorder the nodes to match
         nodes_a, nodes_b = self._reorder_nodes(nodes_left, nodes_right)
 
-        bc_src = SymmBCSource(input_names, scale=scale)
+        bc_src = SymmBC(input_names, scale=scale)
 
         if len(nodes_left) > 0:
             for name in input_names:
@@ -125,66 +181,6 @@ class SymmetryDegreesOfFreedom:
                     f"src_{self.bc_name}.{name}1",
                     src_indices=nodes_b,
                 )
-        return
-
-
-class DirichletBCSource(am.Component):
-    def __init__(self, name, input_names=[]):
-        super().__init__(name=name)
-
-        self.input_names = input_names
-
-        for name in self.input_names:
-            self.add_input(f"{name}")
-            self.add_input(f"lam_{name}")
-
-        self.add_objective("obj")
-        return
-
-    def compute(self):
-        obj = 0.0
-        for name in self.input_names:
-            obj += self.inputs[f"{name}"] * self.inputs[f"lam_{name}"]
-        self.objective["obj"] = obj
-        return
-
-
-class DirichletDegreesOfFreedom:
-    def __init__(self, bc_name, mesh, bc={}):
-        self.bc_name = bc_name
-        self.mesh = mesh
-        self.bc = bc
-        return
-
-    def _get_bc_nodes(self, targets):
-        all_nodes = []
-        for target in targets:
-            nodes = self.mesh.get_bc_nodes(target, "T3D2")
-            all_nodes.append(nodes)
-
-        return np.unique(all_nodes)
-
-    def add_and_link_source(self, model):
-        targets = self.bc["target"]
-        nodes = self._get_bc_nodes(targets)
-
-        input_names = self.bc["input"]
-        bc_src = DirichletBCSource(self.bc_name, input_names=input_names)
-
-        if len(nodes) > 0:
-            model.add_component(
-                f"src_{self.bc_name}",
-                len(nodes),
-                bc_src,
-            )
-
-            for name in input_names:
-                model.link(
-                    f"src_soln.{name}",
-                    f"src_{self.bc_name}.{name}",
-                    src_indices=nodes,
-                )
-
         return
 
 
