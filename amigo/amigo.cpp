@@ -655,6 +655,15 @@ PYBIND11_MODULE(amigo, mod) {
           },
           py::arg("vars"))
       .def(
+          "compute_max_comp_deviation",
+          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
+             const std::shared_ptr<amigo::OptVector<double>> vars, double mu) {
+            double max_dev;
+            self.compute_max_comp_deviation(vars, mu, max_dev);
+            return max_dev;
+          },
+          py::arg("vars"), py::arg("mu"))
+      .def(
           "compute_barrier_log_sum",
           &amigo::InteriorPointOptimizer<double,
                                          detail::policy>::compute_barrier_log_sum,

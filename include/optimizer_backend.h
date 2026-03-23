@@ -598,6 +598,42 @@ void compute_complementarity_pairs(const OptInfo<T>& info,
 }
 
 template <typename T>
+void compute_max_comp_deviation(const OptInfo<T>& info,
+                                OptStateData<const T>& pt, T mu,
+                                T& max_dev) {
+  max_dev = 0.0;
+
+  for (int i = 0; i < info.num_variables; i++) {
+    int index = info.design_variable_indices[i];
+    T x = pt.xlam[index];
+
+    if (!std::isinf(info.lbx[i])) {
+      T comp = (x - info.lbx[i]) * pt.zl[i];
+      T dev = std::abs(comp - mu);
+      max_dev = A2D::max2(max_dev, dev);
+    }
+    if (!std::isinf(info.ubx[i])) {
+      T comp = (info.ubx[i] - x) * pt.zu[i];
+      T dev = std::abs(comp - mu);
+      max_dev = A2D::max2(max_dev, dev);
+    }
+  }
+
+  for (int i = 0; i < info.num_inequalities; i++) {
+    if (!std::isinf(info.lbc[i])) {
+      T comp = (pt.s[i] - info.lbc[i]) * pt.zsl[i];
+      T dev = std::abs(comp - mu);
+      max_dev = A2D::max2(max_dev, dev);
+    }
+    if (!std::isinf(info.ubc[i])) {
+      T comp = (info.ubc[i] - pt.s[i]) * pt.zsu[i];
+      T dev = std::abs(comp - mu);
+      max_dev = A2D::max2(max_dev, dev);
+    }
+  }
+}
+
+template <typename T>
 void compute_kkt_error_components(const OptInfo<T>& info,
                                    OptStateData<const T>& pt, const T* g,
                                    T& dual_infeas_sq, T& primal_infeas_sq,

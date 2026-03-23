@@ -699,6 +699,18 @@ class InteriorPointOptimizer {
                   comm);
   }
 
+  void compute_max_comp_deviation(const std::shared_ptr<OptVector<T>> vars,
+                                  T mu, T& max_dev) const {
+    detail::OptStateData<const T> pt =
+        detail::OptStateData<const T>::template make<policy>(vars);
+
+    T local_max_dev;
+    detail::compute_max_comp_deviation(info, pt, mu, local_max_dev);
+
+    MPI_Allreduce(&local_max_dev, &max_dev, 1, get_mpi_type<T>(), MPI_MAX,
+                  comm);
+  }
+
   /**
    * @brief Compute the barrier log-sum for the IPOPT barrier objective.
    *
