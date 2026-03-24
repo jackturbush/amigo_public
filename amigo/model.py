@@ -749,11 +749,13 @@ class Model:
         # and the constraint row becomes equality (lb = ub = 0).
         self._slack_meta = []
         for k in range(self.num_slacks):
-            self._slack_meta.append({
-                "lower": slack_meta[k][0],
-                "upper": slack_meta[k][1],
-                "value": 0.0,
-            })
+            self._slack_meta.append(
+                {
+                    "lower": slack_meta[k][0],
+                    "upper": slack_meta[k][1],
+                    "value": 0.0,
+                }
+            )
 
         self.num_variables += self.num_slacks
 
