@@ -11,8 +11,9 @@ typedef SSIZE_T ssize_t;
 #include "alias_tracker.h"
 #include "csr_matrix.h"
 #include "external_component.h"
+#include "interior_point_optimizer.h"
 #include "optimization_problem.h"
-#include "optimizer.h"
+#include "slack_coupling.h"
 #include "sparse_cholesky.h"
 
 #ifdef AMIGO_USE_CUDA
@@ -363,6 +364,25 @@ PYBIND11_MODULE(amigo, mod) {
             vars.size(), vars.data(), cons.size(), cons.data(), extrn);
       }));
 
+  // SlackCouplingGroup: couples slack variables to inequality constraints
+  // for the IPOPT 2x2 augmented system (Wachter & Biegler 2006, eq. 13).
+  py::class_<
+      amigo::SlackCouplingGroup<double, detail::policy>,
+      amigo::ComponentGroupBase<double, detail::policy>,
+      std::shared_ptr<amigo::SlackCouplingGroup<double, detail::policy>>>(
+      mod, "SlackCouplingGroup")
+      .def(py::init([](py::array_t<int> slack_indices,
+                       py::array_t<int> ineq_indices) {
+        if (slack_indices.size() != ineq_indices.size()) {
+          throw std::invalid_argument(
+              "slack_indices and ineq_indices must have the same length");
+        }
+        return std::make_shared<
+            amigo::SlackCouplingGroup<double, detail::policy>>(
+            static_cast<int>(slack_indices.size()), slack_indices.data(),
+            ineq_indices.data());
+      }));
+
   py::class_<amigo::NodeOwners, std::shared_ptr<amigo::NodeOwners>>(
       mod, "NodeOwners")
       .def(py::init([](py::object pyobj, py::array_t<int> ranges) {
@@ -532,224 +552,117 @@ PYBIND11_MODULE(amigo, mod) {
       .def("copy", &amigo::OptVector<double>::copy)
       .def("get_zl",
            [](const amigo::OptVector<double>& self) {
-             const double* zl;
-             const double* zu;
+             const double *zl, *zu;
              self.get_bound_duals<detail::policy>(&zl, &zu);
-             // num_variables is private, but zl starts at offset 0
-             // and zu starts at offset num_variables, so length = zu - zl
-             int n = static_cast<int>(zu - zl);
+             int n = self.get_n_primal();
              return std::vector<double>(zl, zl + n);
            })
       .def("get_zu",
            [](const amigo::OptVector<double>& self) {
-             const double* zl;
-             const double* zu;
+             const double *zl, *zu;
              self.get_bound_duals<detail::policy>(&zl, &zu);
-             int n = static_cast<int>(zu - zl);  // num_variables
+             int n = self.get_n_primal();
              return std::vector<double>(zu, zu + n);
-           })
-      .def("get_s",
-           [](const amigo::OptVector<double>& self) {
-             const double* s;
-             self.get_slacks<detail::policy>(&s);
-             // s starts at offset 2*n_var, zsl at 2*n_var+n_ineq
-             const double* zsl;
-             const double* zsu;
-             self.get_slack_duals<detail::policy>(&zsl, &zsu);
-             int n_ineq = static_cast<int>(zsl - s);
-             return std::vector<double>(s, s + n_ineq);
-           })
-      .def("get_zsl",
-           [](const amigo::OptVector<double>& self) {
-             const double* zsl;
-             const double* zsu;
-             self.get_slack_duals<detail::policy>(&zsl, &zsu);
-             int n_ineq = static_cast<int>(zsu - zsl);
-             return std::vector<double>(zsl, zsl + n_ineq);
-           })
-      .def("get_zsu",
-           [](const amigo::OptVector<double>& self) {
-             const double* zsl;
-             const double* zsu;
-             self.get_slack_duals<detail::policy>(&zsl, &zsu);
-             int n_ineq = static_cast<int>(zsu - zsl);
-             return std::vector<double>(zsu, zsu + n_ineq);
            });
 
-  py::class_<
-      amigo::InteriorPointOptimizer<double, detail::policy>,
-      std::shared_ptr<amigo::InteriorPointOptimizer<double, detail::policy>>>(
-      mod, "InteriorPointOptimizer")
+  using IPOpt = amigo::InteriorPointOptimizer<double, detail::policy>;
+  using OV = amigo::OptVector<double>;
+  using Vec = amigo::Vector<double>;
+  using CSR = amigo::CSRMat<double>;
+
+  py::class_<IPOpt, std::shared_ptr<IPOpt>>(mod, "InteriorPointOptimizer")
       .def(py::init<
            std::shared_ptr<amigo::OptimizationProblem<double, detail::policy>>,
-           std::shared_ptr<amigo::Vector<double>>,
-           std::shared_ptr<amigo::Vector<double>>>())
-      .def(
-          "create_opt_vector",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             py::object x = py::none()) {
-            if (!x.is_none()) {
-              return self.create_opt_vector(
-                  x.cast<std::shared_ptr<amigo::Vector<double>>>());
-            }
-            return self.create_opt_vector();
-          },
-          py::arg("x") = py::none())
-      .def(
-          "set_multipliers_value",
-          &amigo::InteriorPointOptimizer<double,
-                                         detail::policy>::set_multipliers_value)
-      .def(
-          "set_design_vars_value",
-          &amigo::InteriorPointOptimizer<double,
-                                         detail::policy>::set_design_vars_value)
-      .def("copy_multipliers",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::copy_multipliers)
-      .def("copy_design_vars",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::copy_design_vars)
-      .def("initialize_multipliers_and_slacks",
-           &amigo::InteriorPointOptimizer<
-               double, detail::policy>::initialize_multipliers_and_slacks)
-      .def("compute_residual",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::compute_residual)
-      .def("compute_update",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::compute_update)
-      .def("compute_diagonal",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::compute_diagonal)
+           std::shared_ptr<Vec>, std::shared_ptr<Vec>>())
+      .def("create_opt_vector",
+           [](const IPOpt& self, py::object x) {
+             if (!x.is_none())
+               return self.create_opt_vector(x.cast<std::shared_ptr<Vec>>());
+             return self.create_opt_vector();
+           }, py::arg("x") = py::none())
+      .def("set_multipliers_value", &IPOpt::set_multipliers_value)
+      .def("set_design_vars_value", &IPOpt::set_design_vars_value)
+      .def("copy_multipliers", &IPOpt::copy_multipliers)
+      .def("copy_design_vars", &IPOpt::copy_design_vars)
+      .def("initialize_multipliers_and_slacks", &IPOpt::initialize_multipliers_and_slacks)
+      .def("compute_residual", &IPOpt::compute_residual)
+      .def("compute_update", &IPOpt::compute_update)
+      .def("compute_diagonal", &IPOpt::compute_diagonal)
       .def("compute_max_step",
-           [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-              const double tau,
-              const std::shared_ptr<amigo::OptVector<double>> vars,
-              const std::shared_ptr<amigo::OptVector<double>> update) {
-             double alpha_x, alpha_z;
-             int x_index, z_index;
-             self.compute_max_step(tau, vars, update, alpha_x, x_index, alpha_z,
-                                   z_index);
-             return py::make_tuple(alpha_x, x_index, alpha_z, z_index);
+           [](const IPOpt& self, double tau,
+              std::shared_ptr<OV> vars, std::shared_ptr<OV> upd) {
+             double ax = 1.0, az = 1.0; int xi = -1, zi = -1;
+             self.compute_max_step(tau, vars, upd, ax, xi, az, zi);
+             return py::make_tuple(ax, xi, az, zi);
            })
-      .def("apply_step_update",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::apply_step_update)
-      .def(
-          "compute_complementarity",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             const std::shared_ptr<amigo::OptVector<double>> vars) {
-            double complementarity;
-            double uniformity;
-            self.compute_complementarity(vars, complementarity, uniformity);
-            return py::make_tuple(complementarity, uniformity);
-          },
-          py::arg("vars"))
-      .def(
-          "compute_complementarity_sq",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             const std::shared_ptr<amigo::OptVector<double>> vars) {
-            double comp_sq;
-            self.compute_complementarity_sq(vars, comp_sq);
-            return comp_sq;
-          },
-          py::arg("vars"))
-      .def(
-          "compute_max_comp_deviation",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             const std::shared_ptr<amigo::OptVector<double>> vars, double mu) {
-            double max_dev;
-            self.compute_max_comp_deviation(vars, mu, max_dev);
-            return max_dev;
-          },
-          py::arg("vars"), py::arg("mu"))
-      .def(
-          "compute_barrier_log_sum",
-          &amigo::InteriorPointOptimizer<double,
-                                         detail::policy>::compute_barrier_log_sum,
-          py::arg("barrier_param"), py::arg("vars"))
-      .def(
-          "compute_barrier_dphi",
-          &amigo::InteriorPointOptimizer<double,
-                                         detail::policy>::compute_barrier_dphi,
-          py::arg("barrier_param"), py::arg("vars"), py::arg("update"),
-          py::arg("res"), py::arg("px"), py::arg("diag"))
-      .def(
-          "reset_bound_multipliers",
-          &amigo::InteriorPointOptimizer<double,
-                                         detail::policy>::reset_bound_multipliers,
-          py::arg("barrier_param"), py::arg("kappa_sigma"), py::arg("vars"))
-      .def(
-          "compute_kkt_error",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             const std::shared_ptr<amigo::OptVector<double>> vars,
-             const std::shared_ptr<amigo::Vector<double>> grad) {
-            double dual_infeas_sq, primal_infeas_sq, comp_sq;
-            self.compute_kkt_error(vars, grad, dual_infeas_sq, primal_infeas_sq,
-                                   comp_sq);
-            return py::make_tuple(dual_infeas_sq, primal_infeas_sq, comp_sq);
-          },
-          py::arg("vars"), py::arg("grad"))
-      .def(
-          "compute_residual_and_infeasibility",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self,
-             double barrier_param,
-             const std::shared_ptr<amigo::OptVector<double>> vars,
-             const std::shared_ptr<amigo::Vector<double>> grad,
-             std::shared_ptr<amigo::Vector<double>> res) {
-            double dual_infeas_sq, primal_infeas_sq;
-            self.compute_residual_and_infeasibility(
-                barrier_param, vars, grad, res,
-                dual_infeas_sq, primal_infeas_sq);
-            return py::make_tuple(dual_infeas_sq, primal_infeas_sq);
-          },
-          py::arg("barrier_param"),
-          py::arg("vars"), py::arg("grad"), py::arg("res"))
-      .def(
-          "get_kkt_element_counts",
-          [](const amigo::InteriorPointOptimizer<double, detail::policy>& self) {
-            int n_dual, n_primal, n_comp;
-            self.get_kkt_element_counts(n_dual, n_primal, n_comp);
-            return py::make_tuple(n_dual, n_primal, n_comp);
-          })
-      .def("compute_affine_start_point",
-           &amigo::InteriorPointOptimizer<
-               double, detail::policy>::compute_affine_start_point)
-      .def("compute_dual_residual_vector",
-           &amigo::InteriorPointOptimizer<
-               double, detail::policy>::compute_dual_residual_vector,
+      .def("apply_step_update", &IPOpt::apply_step_update)
+      .def("compute_complementarity",
+           [](const IPOpt& self, std::shared_ptr<OV> vars) {
+             double avg, xi;
+             self.compute_complementarity(vars, avg, xi);
+             return py::make_tuple(avg, xi);
+           }, py::arg("vars"))
+      .def("compute_complementarity_sq",
+           [](const IPOpt& self, std::shared_ptr<OV> vars) {
+             double sq;
+             self.compute_complementarity_sq(vars, sq);
+             return sq;
+           }, py::arg("vars"))
+      .def("compute_max_comp_deviation",
+           [](const IPOpt& self, std::shared_ptr<OV> vars, double mu) {
+             double md;
+             self.compute_max_comp_deviation(vars, mu, md);
+             return md;
+           }, py::arg("vars"), py::arg("mu"))
+      .def("compute_barrier_log_sum", &IPOpt::compute_barrier_log_sum,
+           py::arg("barrier_param"), py::arg("vars"))
+      .def("compute_barrier_dphi", &IPOpt::compute_barrier_dphi,
+           py::arg("barrier_param"), py::arg("vars"), py::arg("update"),
+           py::arg("res"), py::arg("px"), py::arg("diag"))
+      .def("reset_bound_multipliers", &IPOpt::reset_bound_multipliers,
+           py::arg("barrier_param"), py::arg("kappa_sigma"), py::arg("vars"))
+      .def("compute_kkt_error",
+           [](const IPOpt& self, std::shared_ptr<OV> vars, std::shared_ptr<Vec> grad) {
+             double d, p, c;
+             self.compute_kkt_error(vars, grad, d, p, c);
+             return py::make_tuple(d, p, c);
+           }, py::arg("vars"), py::arg("grad"))
+      .def("compute_kkt_error_mu",
+           [](const IPOpt& self, double mu, std::shared_ptr<OV> vars, std::shared_ptr<Vec> grad) {
+             double d, p, c;
+             self.compute_kkt_error_mu(mu, vars, grad, d, p, c);
+             return py::make_tuple(d, p, c);
+           }, py::arg("mu"), py::arg("vars"), py::arg("grad"))
+      .def("compute_residual_and_infeasibility",
+           [](const IPOpt& self, double mu,
+              std::shared_ptr<OV> vars, std::shared_ptr<Vec> grad,
+              std::shared_ptr<Vec> res) {
+             double d, p;
+             self.compute_residual_and_infeasibility(mu, vars, grad, res, d, p);
+             return py::make_tuple(d, p);
+           }, py::arg("barrier_param"), py::arg("vars"), py::arg("grad"), py::arg("res"))
+      .def("get_kkt_element_counts",
+           [](const IPOpt& self) {
+             int d, p, c;
+             self.get_kkt_element_counts(d, p, c);
+             return py::make_tuple(d, p, c);
+           })
+      .def("compute_affine_start_point", &IPOpt::compute_affine_start_point)
+      .def("compute_dual_residual_vector", &IPOpt::compute_dual_residual_vector,
            py::arg("vars"), py::arg("grad"), py::arg("output"))
-      .def(
-          "check_update",
-          &amigo::InteriorPointOptimizer<double, detail::policy>::check_update)
+      .def("check_update", &IPOpt::check_update)
       .def("get_lbx",
-           [](const amigo::InteriorPointOptimizer<double, detail::policy>& self) {
-             const auto& vec = *self.get_lbx();
-             const double* arr = vec.template get_array<detail::policy>();
-             return std::vector<double>(arr, arr + vec.get_size());
+           [](const IPOpt& self) {
+             const auto& v = *self.get_lbx();
+             const double* a = v.template get_array<detail::policy>();
+             return std::vector<double>(a, a + v.get_size());
            })
       .def("get_ubx",
-           [](const amigo::InteriorPointOptimizer<double, detail::policy>& self) {
-             const auto& vec = *self.get_ubx();
-             const double* arr = vec.template get_array<detail::policy>();
-             return std::vector<double>(arr, arr + vec.get_size());
+           [](const IPOpt& self) {
+             const auto& v = *self.get_ubx();
+             const double* a = v.template get_array<detail::policy>();
+             return std::vector<double>(a, a + v.get_size());
            })
-      .def("get_lbc",
-           [](const amigo::InteriorPointOptimizer<double, detail::policy>& self) {
-             const auto& vec = *self.get_lbc();
-             const double* arr = vec.template get_array<detail::policy>();
-             return std::vector<double>(arr, arr + vec.get_size());
-           })
-      .def("get_ubc",
-           [](const amigo::InteriorPointOptimizer<double, detail::policy>& self) {
-             const auto& vec = *self.get_ubc();
-             const double* arr = vec.template get_array<detail::policy>();
-             return std::vector<double>(arr, arr + vec.get_size());
-           })
-      .def("get_num_inequalities",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::get_num_inequalities)
-      .def("get_num_design_variables",
-           &amigo::InteriorPointOptimizer<double,
-                                          detail::policy>::get_num_design_variables);
+      .def("get_num_inequalities", &IPOpt::get_num_inequalities)
+      .def("get_num_design_variables", &IPOpt::get_num_design_variables);
 }

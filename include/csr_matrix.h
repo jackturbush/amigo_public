@@ -582,6 +582,9 @@ class CSRMat {
     }
   }
 
+  T* get_data_ptr() { return data; }
+  const T* get_data_ptr() const { return data; }
+
   /**
    * @brief Get the data from the CSR object
    *

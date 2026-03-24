@@ -17,6 +17,7 @@ from .amigo import (
     NodeOwners,
     CSRMat,
     ExternalComponentGroup,
+    SlackCouplingGroup,
 )
 from .cmake_helper import get_cmake_dir
 from .component import Component
@@ -674,6 +675,14 @@ class Model:
     ):
         """
         Initialize the variable indices for each component and resolve all links.
+
+        After standard index assignment and reordering, this method also
+        introduces explicit slack variables for inequality constraints,
+        following the formulation in Wachter & Biegler 2006 (eq. 1).
+        Each inequality constraint ``lbc <= c(x) <= ubc`` is reformulated
+        as an equality ``c(x) - s = 0`` with a bounded slack ``lbc <= s <= ubc``.
+        The slack indices are appended to the variable space so that the
+        resulting KKT system is a 2x2 augmented system (eq. 13).
         """
 
         self.num_variables = self._init_indices(
@@ -691,10 +700,62 @@ class Model:
         self.constraint_indices = self._get_constraint_indices()
         self.num_constraints = len(self.constraint_indices)
 
+        # Slack introduction for inequality constraints.
+        self._allocate_slacks()
+
         self._initialized = True
         self.problem = self._create_opt_problem(comm=comm)
 
         return
+
+    def _allocate_slacks(self):
+        """Identify inequality constraints and allocate slack variable indices.
+
+        Each inequality constraint ``lbc <= c(x) <= ubc`` is reformulated as
+        the equality ``c(x) - s = 0`` with a bounded slack ``lbc <= s <= ubc``.
+
+        Slack meta data is stored so that ``get_values_from_meta`` returns
+        correct bounds and initial values for slacks without any post-processing
+        in the Optimizer.
+        """
+        ineq_indices = []
+        slack_meta = []  # (lower, upper) per slack
+
+        for comp_name, comp in self.comp.items():
+            for con_name in comp.get_constraint_names():
+                meta = comp.get_meta(con_name)
+                lb = np.asarray(meta["lower"]).ravel()
+                ub = np.asarray(meta["upper"]).ravel()
+                idx = comp.get_var(con_name).ravel()
+                for j in range(len(idx)):
+                    lb_j = float(lb[j]) if lb.size > 1 else float(lb[0])
+                    ub_j = float(ub[j]) if ub.size > 1 else float(ub[0])
+                    is_eq = np.isfinite(lb_j) and np.isfinite(ub_j) and lb_j == ub_j
+                    if not is_eq:
+                        ineq_indices.append(idx[j])
+                        slack_meta.append((lb_j, ub_j))
+
+        self.ineq_constraint_indices = np.array(ineq_indices, dtype=np.int32)
+        self.num_slacks = len(ineq_indices)
+
+        self.slack_indices = np.arange(
+            self.num_variables,
+            self.num_variables + self.num_slacks,
+            dtype=np.int32,
+        )
+
+        # Meta data for each slack: bounds inherited from its inequality
+        # constraint, initial value = 0 (will be set to c(x) during init),
+        # and the constraint row becomes equality (lb = ub = 0).
+        self._slack_meta = []
+        for k in range(self.num_slacks):
+            self._slack_meta.append({
+                "lower": slack_meta[k][0],
+                "upper": slack_meta[k][1],
+                "value": 0.0,
+            })
+
+        self.num_variables += self.num_slacks
 
     def _get_expr_type(self, name: str):
         path, indices = _parse_var_expr(name)
@@ -817,6 +878,15 @@ class Model:
         """
         Create the optimization problem object that is used to evaluate the gradient and
         Hessian of the Lagrangian.
+
+        After slack allocation, ``self.num_variables`` includes both the
+        original variables (design vars + constraint multipliers) and the
+        newly appended slack variables.  Slacks are marked as primal
+        (``is_multiplier = 0``) so that the C++ InteriorPointOptimizer
+        treats them as bounded design variables.  The original inequality
+        constraint rows remain marked as multipliers but their bounds will
+        be converted to equalities (``lb = ub = 0``) in the Optimizer,
+        reflecting the reformulation ``c(x) - s = 0``.
         """
 
         if not self._initialized:
@@ -844,8 +914,19 @@ class Model:
             if obj is not None:
                 objs.append(obj)
 
+        # Add the slack coupling component group.
+        # This declares the -I Jacobian sparsity between slacks and
+        # inequality constraints and adds the corresponding gradient
+        # and Hessian contributions during evaluation.
+        if self.num_slacks > 0:
+            slack_coupling = SlackCouplingGroup(
+                np.ascontiguousarray(self.slack_indices, dtype=np.int32),
+                np.ascontiguousarray(self.ineq_constraint_indices, dtype=np.int32),
+            )
+            objs.append(slack_coupling)
+
         var_ranges = np.zeros(comm_size + 1, dtype=np.int32)
-        var_ranges[1:] = self.num_variables
+        var_ranges[1:] = self.num_variables  # includes slacks
         var_owners = NodeOwners(comm, var_ranges)
 
         data_ranges = np.zeros(comm_size + 1, dtype=np.int32)
@@ -856,10 +937,15 @@ class Model:
         output_ranges[1:] = self.num_outputs
         output_owners = NodeOwners(comm, output_ranges)
 
-        # Set the multipliers
+        # Set the multiplier indicator.
+        # Original constraint indices are multipliers (1).
+        # Slack indices are primal variables (0).
         is_multiplier = VectorInt(self.num_variables)
         is_multiplier.get_array()[:] = 0
         is_multiplier.get_array()[self.constraint_indices] = 1
+        # slack_indices were appended after the original variable space
+        # and are already 0 (primal) by the default initialization above.
+
         prob = OptimizationProblem(
             comm, data_owners, var_owners, output_owners, is_multiplier, objs
         )
@@ -922,17 +1008,19 @@ class Model:
 
     def get_values_from_meta(self, meta_name: str):
         """
-        Set values into the provided list or array.
+        Return a vector with meta data values for all variables including slacks.
 
-        Note that this does not guarantee that the meta data is consistent between components.
-        The last component added will overwrite whatever is set by other components without
-        checking the consistency of the values.
+        For component variables, the value comes from component meta data.
+        For slack variables, the value comes from the parent inequality
+        constraint's meta data (bounds are inherited, initial value defaults
+        to 0). For "lower" and "upper", the inequality constraint rows are
+        set to 0 (equality: c(x) - s = 0).
 
         Args:
-            meta_name (str) : The name of the meta data to place into the array
+            meta_name (str) : The name of the meta data ("value", "lower", "upper")
 
         Returns:
-            x (ModelVector) : The meta values assigned to each component
+            x (ModelVector) : The meta values assigned to each variable
         """
 
         if not self._initialized:
@@ -949,6 +1037,14 @@ class Model:
                 if value is None:
                     value = 0.0
                 x[name] = value
+
+        # Fill slack variable meta and convert inequality constraints to equalities
+        if self.num_slacks > 0 and meta_name in self._slack_meta[0]:
+            arr = x.get_vector().get_array()
+            for k in range(self.num_slacks):
+                arr[self.slack_indices[k]] = self._slack_meta[k][meta_name]
+                if meta_name in ("lower", "upper"):
+                    arr[self.ineq_constraint_indices[k]] = 0.0
 
         return x
 
@@ -1004,7 +1100,6 @@ class Model:
         # C++ file contents
         cpp = '#include "amigo.h"\n'
         cpp += '#include "a2dcore.h"\n'
-        cpp += '#include "a2d_sed.h"\n'
         cpp += "namespace amigo {"
 
         # pybind11 file contents
