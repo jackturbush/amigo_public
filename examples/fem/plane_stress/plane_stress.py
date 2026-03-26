@@ -47,14 +47,14 @@ soln_space = SolutionSpace({"u": "H1", "v": "H1"})
 geo_space = SolutionSpace({"x": "H1", "y": "H1"})
 data_space = SolutionSpace({})  # empty for now
 
-potential_map = {
+integrand_map = {
     "plane_stress": {
         "target": ["SURFACE1"],
-        "potential": potential_plane_stress,
+        "integrand": potential_plane_stress,
     },
     "traction": {
         "target": ["LINE2"],
-        "potential": potential_traction,
+        "integrand": potential_traction,
     },
 }
 
@@ -81,7 +81,7 @@ problem = Problem(
     soln_space,
     data_space,
     geo_space,
-    potential_map=potential_map,
+    integrand_map=integrand_map,
     bc_map=bc_map,
 )
 
@@ -90,22 +90,31 @@ model = problem.create_model("plane_stress")
 if args.build:
     model.build_module()
 
-model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
-p = model.get_problem()
+model.initialize()
 
-# Solve
-x = p.create_vector()
-mat = p.create_matrix()
-g = p.create_vector()
-p.hessian(1.0, x, mat)  # assembles K
-p.gradient(1.0, x, g)  # assembles f (body force / BC terms)
+# Create the vectors and matrices for the model
+x = model.create_vector()
+g = model.create_vector()
+mat = model.create_matrix()
 
-K = am.tocsr(mat)
-soln = spsolve(K, g.get_array())
+print("Evaluating the Hessian...")
+model.eval_gradient(x, g)
+model.eval_hessian(x, mat)
+
+# Solve the equations
+print("Solving...")
+chol = am.SparseCholesky(mat)
+flag = chol.factor()
+
+# Solve the equations
+x[:] = g[:]
+chol.solve(x.get_vector())
+
+print("Plotting...")
 
 # Extract displacement fields
-u = soln[model.get_indices("src_soln.u")]
-v = soln[model.get_indices("src_soln.v")]
+u = x["soln.u"]
+v = x["soln.v"]
 
 fig, ax = plt.subplots(nrows=2)
 mesh.plot(u, ax=ax[0])

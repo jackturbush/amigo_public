@@ -399,7 +399,8 @@ PYBIND11_MODULE(amigo, mod) {
              std::shared_ptr<amigo::NodeOwners> output_owners,
              std::shared_ptr<amigo::Vector<int>> is_multiplier,
              const std::vector<std::shared_ptr<amigo::ComponentGroupBase<
-                 double, detail::policy>>>& components) {
+                 double, detail::policy>>>& components,
+             std::shared_ptr<amigo::Vector<int>> fixed_dofs) {
             MPI_Comm comm = MPI_COMM_SELF;
             if (!pyobj.is_none()) {
               comm = *PyMPIComm_Get(pyobj.ptr());
@@ -407,7 +408,7 @@ PYBIND11_MODULE(amigo, mod) {
             return std::make_shared<
                 amigo::OptimizationProblem<double, detail::policy>>(
                 comm, data_owners, var_owners, output_owners, is_multiplier,
-                components);
+                components, fixed_dofs);
           }))
       .def("get_num_variables",
            &amigo::OptimizationProblem<double,

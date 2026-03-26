@@ -63,7 +63,7 @@ model = problem.create_model("poisson")
 if args.build:
     model.build_module()
 
-model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
+model.initialize()
 
 x = model.create_vector()
 g = model.create_vector()

@@ -102,7 +102,7 @@ integrand_map = {
     },
 }
 bc_map = {
-    "clamp_w": {
+    "clamped": {
         "type": "dirichlet",
         "input": ["w", "tx", "ty"],
         "target": ["LINE1", "LINE2", "LINE3", "LINE4"],
@@ -143,8 +143,9 @@ model = problem.create_model("plate")
 if args.build:
     model.build_module()
 
-model.initialize(order_type=am.OrderingType.NESTED_DISSECTION)
+model.initialize()
 
+# Create the vectors and matrices for the model
 x = model.create_vector()
 g = model.create_vector()
 mat = model.create_matrix()
@@ -155,8 +156,12 @@ model.eval_hessian(x, mat)
 
 # Solve the equations
 print("Solving...")
-K = am.tocsr(mat)
-x[:] = spsolve(K, g[:])
+chol = am.SparseCholesky(mat)
+flag = chol.factor()
+
+# Solve the equations
+x[:] = g[:]
+chol.solve(x.get_vector())
 
 print("Plotting...")
 w = x["soln.w"]

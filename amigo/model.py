@@ -28,9 +28,9 @@ except:
 
 if sys.version_info < (3, 11):
     Self = object
-    from typing import Union, List, Dict
+    from typing import List, Dict
 else:
-    from typing import Union, Self, List, Dict
+    from typing import Self, List, Dict
 
 
 def _import_class(module_name: str, class_name: str):
@@ -419,6 +419,7 @@ class Model:
         self.links = []
         self._initialized = False
         self._staged_data = {}
+        self._staged_fixed_vars = []
 
     def _get_group_shapes(self, size: int, var_shapes: dict):
         for var_name in var_shapes:
@@ -541,6 +542,10 @@ class Model:
         for data_name in model._staged_data:
             self._staged_data[name + "." + data_name] = model._staged_data[data_name]
 
+        # Add any fixed variables
+        for expr, indices in model._staged_fixed_vars:
+            self._staged_fixed_vars.append((name + "." + expr, indices))
+
         return
 
     def _get_slice_indices(self, all, slice, idx):
@@ -557,8 +562,8 @@ class Model:
         self,
         src_expr: str,
         tgt_expr: str,
-        src_indices: Union[None, list, np.ndarray] = None,
-        tgt_indices: Union[None, list, np.ndarray] = None,
+        src_indices: None | list | np.ndarray = None,
+        tgt_indices: None | list | np.ndarray = None,
     ):
         """
         Link two inputs, constraints, outputs or data components so that they are the same.
@@ -713,6 +718,15 @@ class Model:
 
         return
 
+    def add_fixed(self, expr: str, indices: None | list | np.ndarray = None):
+        """
+        Add fixed variables.
+
+        These are fixed values that will not be changed during the optimization.
+        """
+        self._staged_fixed_vars.append((expr, indices))
+        return
+
     def _reorder_indices(self, order_type, order_for_block=False):
         arrays = []
         for name, comp in self.comp.items():
@@ -722,9 +736,7 @@ class Model:
 
         if order_for_block:
             constraint_indices = self._get_constraint_indices()
-            iperm = reorder_model(
-                order_type, arrays, constraint_indices=constraint_indices
-            )
+            iperm = reorder_model(order_type, arrays, constraint_indices)
         else:
             iperm = reorder_model(order_type, arrays)
 
@@ -790,19 +802,19 @@ class Model:
     def _get_expr_type(self, name: str):
         path, indices = _parse_var_expr(name)
         comp_name = ".".join(path[:-1])
-        name = path[-1]
+        var_name = path[-1]
 
-        if name in self.comp[comp_name].get_input_names():
+        if var_name in self.comp[comp_name].get_input_names():
             return "input"
-        elif name in self.comp[comp_name].get_constraint_names():
+        elif var_name in self.comp[comp_name].get_constraint_names():
             return "constraint"
-        elif name in self.comp[comp_name].get_data_names():
+        elif var_name in self.comp[comp_name].get_data_names():
             return "data"
-        elif name in self.comp[comp_name].get_output_names():
+        elif var_name in self.comp[comp_name].get_output_names():
             return "output"
         else:
             raise ValueError(
-                f"Name {comp_name}.{name} is neither an input, constraint, output or data"
+                f"Name {comp_name}.{var_name} is neither an input, constraint, output or data"
             )
 
     def get_indices(self, name: str | List[str]):
@@ -951,8 +963,20 @@ class Model:
         is_multiplier = VectorInt(self.num_variables)
         is_multiplier.get_array()[:] = 0
         is_multiplier.get_array()[self.constraint_indices] = 1
+
+        # Create the fixed variables
+        fixed_vars = []
+        for expr, indices in self._staged_fixed_vars:
+            if indices is None:
+                fixed_vars.append(self.get_indices(expr))
+            else:
+                fixed_vars.append(self.get_indices(expr)[indices])
+        fixed_vars = np.unique(fixed_vars)
+        fixed = VectorInt(len(fixed_vars))
+        fixed.get_array()[:] = fixed_vars
+
         prob = OptimizationProblem(
-            comm, data_owners, var_owners, output_owners, is_multiplier, objs
+            comm, data_owners, var_owners, output_owners, is_multiplier, objs, fixed
         )
 
         return prob
@@ -982,9 +1006,7 @@ class Model:
         """Retrieve the optimization problem"""
         return self.problem
 
-    def extract_submatrix(
-        self, A: Union[CSRMat, spmatrix], of: List[str], wrt: List[str]
-    ):
+    def extract_submatrix(self, A: CSRMat | spmatrix, of: List[str], wrt: List[str]):
         """
         Given the matrix A, find the sub-matrix A[indices[of], indices[wrt]]
         """

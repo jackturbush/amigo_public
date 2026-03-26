@@ -2,47 +2,6 @@ from . import basis
 
 import numpy as np
 import re
-import matplotlib.pyplot as plt
-import matplotlib.tri as tri
-
-
-def plot_mesh(X, elem_conn, edge_dict, jpg_name=None):
-    fig, ax = plt.subplots()
-
-    # --- Plot element triangulation (background mesh) ---
-    triang = tri.Triangulation(X[:, 0], X[:, 1], elem_conn)
-    ax.triplot(triang, color="grey", linestyle="--", linewidth=1.0)
-
-    # --- Plot node tags ---
-    for n in range(len(X)):
-        ax.text(X[n, 0], X[n, 1], f"{n}", fontsize=8)
-
-    # --- Plot unique global edges ---
-    for edge_tag, nodes in edge_dict.items():
-
-        if len(nodes) == 2:
-            # Linear edge
-            n1, n2 = nodes
-            x = [X[n1, 0], X[n2, 0]]
-            y = [X[n1, 1], X[n2, 1]]
-            ax.plot(x, y, linewidth=2.0)
-
-            xm = 0.5 * (x[0] + x[1])
-            ym = 0.5 * (y[0] + y[1])
-        else:
-            raise ValueError("nnodes along edge > 2")
-
-        # Edge label
-        ax.text(xm, ym, f"E{edge_tag}", fontsize=9)
-
-    ax.set_aspect("equal")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-
-    if jpg_name is not None:
-        plt.savefig(jpg_name + ".jpg", dpi=1000)
-
-    # plt.show()
 
 
 class InpParser:
@@ -131,16 +90,15 @@ class InpParser:
         conn = self.elem_conn[elset][elem_type]
         return np.array([conn[k] for k in sorted(conn.keys())], dtype=int)
 
-    def get_edge_node(self, elset, elem_type):
-        if elem_type == "T3D2":
-            conn = self.get_conn(elset, elem_type)
-        else:
-            raise NotImplementedError(f"{elem_type} not valid")
+    def get_nodes_in_domain(self, elset):
+        conn = []
+        for elem_type in self.elem_conn[elset]:
+            conn.extend(self.get_conn(elset, elem_type).flatten())
 
         # Turn into a single unique list of nodes preserving GMSH ordering
-        node_tags_list = np.array(list(dict.fromkeys(conn.flatten())))
+        node_list = np.array(list(dict.fromkeys(conn)))
 
-        return node_tags_list
+        return node_list
 
     def get_basis(self, space, etype, kind="input"):
         basis_list = []
@@ -276,14 +234,3 @@ class InpParser:
                     tag += 1
 
         return edge_dict
-
-
-if __name__ == "__main__":
-    fname = "plate.inp"
-    parser = InpParser()
-    parser.parse_inp(fname)
-    X = parser.get_nodes()
-    elem_conn = parser.get_conn("SURFACE1", "CPS3")
-    edge_conn = parser.get_conn_edges("SURFACE1", "CPS3")
-    plot_mesh(X, elem_conn, edge_conn, "mesh_with_edges")
-    plt.show()

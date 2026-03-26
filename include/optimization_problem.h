@@ -4,6 +4,7 @@
 #include <mpi.h>
 
 #include "component_group_base.h"
+#include "fixed_variables.h"
 #include "matrix_distribute.h"
 #include "node_owners.h"
 #include "vector_distribute.h"
@@ -29,13 +30,15 @@ class OptimizationProblem {
       std::shared_ptr<NodeOwners> output_owners,
       std::shared_ptr<Vector<int>> is_multiplier_,
       const std::vector<std::shared_ptr<ComponentGroupBase<T, policy>>>&
-          components)
+          components,
+      std::shared_ptr<Vector<int>> fixed_dofs = nullptr)
       : comm(comm),
         data_owners(data_owners),
         var_owners(var_owners),
         output_owners(output_owners),
         is_multiplier(is_multiplier_),
         components(components),
+        fixed_dofs(fixed_dofs),
         data_dist(data_owners),
         var_dist(var_owners),
         output_dist(output_owners) {
@@ -659,6 +662,16 @@ class OptimizationProblem {
       delete[] rowp;
       delete[] cols;
 
+      // Create the fixed variables object
+      if (fixed_dofs) {
+        fixed = std::make_shared<FixedVariables>(fixed_dofs, mat);
+
+        // If policy == CUDA, copy to the device
+        if constexpr (policy == ExecPolicy::CUDA) {
+          fixed->copy_host_to_device();
+        }
+      }
+
       // Perform any component group initializations with the Hessian matrix
       for (size_t i = 0; i < components.size(); i++) {
         components[i]->initialize_hessian_pattern(*var_owners, *mat);
@@ -742,6 +755,10 @@ class OptimizationProblem {
 
     var_dist.begin_reverse_add(g, var_ctx);
     var_dist.end_reverse_add(g, var_ctx);
+
+    if (fixed) {
+      fixed->zero_rows<policy>(g);
+    }
   }
 
   /**
@@ -768,6 +785,10 @@ class OptimizationProblem {
 
     var_dist.begin_reverse_add(h, var_ctx);
     var_dist.end_reverse_add(h, var_ctx);
+
+    if (fixed) {
+      fixed->zero_rows<policy>(h);
+    }
   }
 
   /**
@@ -790,6 +811,10 @@ class OptimizationProblem {
 
     mat_dist->begin_assembly(matrix, mat_dist_ctx);
     mat_dist->end_assembly(matrix, mat_dist_ctx);
+
+    if (fixed) {
+      fixed->zero_rows_and_columns<policy>(matrix);
+    }
   }
 
   /**
@@ -1282,6 +1307,9 @@ class OptimizationProblem {
   // Component groups for the optimization problem
   std::vector<std::shared_ptr<ComponentGroupBase<T, policy>>> components;
 
+  // Fixed variable indices
+  std::shared_ptr<Vector<int>> fixed_dofs;
+
   // Variable information
   VectorDistribute<policy> data_dist;
   VectorDistribute<policy> var_dist;
@@ -1306,6 +1334,9 @@ class OptimizationProblem {
   MatrixDistribute<policy>* mat_dist;
   typename MatrixDistribute<policy>::template MatDistributeContext<T>*
       mat_dist_ctx;
+
+  // Fixed variable info for the Hessian
+  std::shared_ptr<FixedVariables> fixed;
 
   // Information about the output Jacobian
   std::shared_ptr<CSRMat<T>> input_jac;

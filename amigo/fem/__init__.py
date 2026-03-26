@@ -9,7 +9,7 @@ from .basis import (
     TriangleQuadrature,
     QuadQuadrature,
 )
-from .connectivity import InpParser, plot_mesh
+from .connectivity import InpParser
 from .element import (
     FiniteElement,
     FiniteElementOutput,
@@ -17,6 +17,7 @@ from .element import (
     MITCElement,
     MITCElementOutput,
 )
+from .plot_utils import plot, plot_mesh
 
 __all__ = [
     Problem,
@@ -28,6 +29,7 @@ __all__ = [
     MITCElementOutput,
     SolutionSpace,
     InpParser,
+    plot,
     plot_mesh,
     dot_product,
     curl_2d,
