@@ -216,18 +216,6 @@ class DirectScipySolver(_HessianDiagMixin):
         """Solve K*x = rhs using existing factorization. Returns numpy array."""
         return self.lu.solve(rhs)
 
-    def get_inertia(self):
-        """Approximate inertia from LU diagonal (heuristic).
-
-        With diag_pivot_thresh=1.0 (strong diagonal pivoting), the signs of
-        U's diagonal approximate the eigenvalue signs of the original matrix.
-        Returns (n_positive, n_negative).
-        """
-        if self.lu is None:
-            raise RuntimeError("Must call factor() before get_inertia()")
-        u_diag = self.lu.U.diagonal()
-        return int(np.sum(u_diag > 0)), int(np.sum(u_diag < 0))
-
 
 class MumpsSolver(_HessianDiagMixin):
     """Sparse symmetric indefinite solver via MUMPS (LDL^T with inertia).
@@ -925,6 +913,7 @@ class InertiaCorrector:
     def __init__(self, mult_ind, barrier_param, options):
         self.mult_ind = mult_ind
         self._barrier = barrier_param
+        self._verbose = options.get("verbose_barrier", False)
         self.numerical_eps = 1e-12
 
         # Perturbation state
@@ -1238,7 +1227,7 @@ class InertiaCorrector:
                     )
                 return True
 
-            if comm_rank == 0 and not singular:
+            if comm_rank == 0 and not singular and self._verbose:
                 print(
                     f"  Inertia: expected ({n_primal}+, {n_dual}-), "
                     f"got ({n_pos}+, {n_neg}-), "
@@ -3918,7 +3907,9 @@ class Optimizer:
                         filter_monotone_mu = new_mu
                     self.barrier_param = filter_monotone_mu
 
-                elif i > 0 and self.barrier_param > tol:
+                elif i > 0 and self.barrier_param > min(tol, compl_inf_tol) / (
+                    options["barrier_tol_factor"] + 1.0
+                ):
                     # Monotone A-3 barrier update
                     kappa_eps = options["barrier_tol_factor"]
                     kappa_mu = options["mu_linear_decrease_factor"]
@@ -3938,12 +3929,14 @@ class Optimizer:
 
                     if should_reduce:
                         if heuristic:
+                            kappa_eps = options["barrier_tol_factor"]
+                            mu_floor = min(tol, compl_inf_tol) / (kappa_eps + 1.0)
                             self.barrier_param, _ = self._compute_barrier_heuristic(
                                 xi_h,
                                 comp_h,
                                 options["heuristic_barrier_gamma"],
                                 options["heuristic_barrier_r"],
-                                tol,
+                                mu_floor,
                             )
                         else:
                             # A-3 monotone with while-loop for multi-step reduction
