@@ -23,17 +23,21 @@ def plot_mesh(mesh, dx, dy):
                 mesh.X[:, 0] + dx, mesh.X[:, 1] + dy, conn
             )
             ax.triplot(triang, color="grey", linestyle="--", linewidth=1.0)
-            ax.triplot(triang_deformed, color="blue", linestyle="--", linewidth=1.0)
+            ax.triplot(triang_deformed, color="blue", linestyle="-", linewidth=1.0)
 
     ax.set_aspect("equal")
     ax.set_axis_off()
     return
 
 
-def strain_energy_integrad(soln, data=None, geo=None):
+def strain_energy_integrand(soln, data=None, geo=None):
     # Gradients of the solution field
     dx_grad = soln["dx"]["grad"]
     dy_grad = soln["dy"]["grad"]
+
+    # geometry vars
+    x = geo["x"]["value"]
+    y = geo["y"]["value"]
 
     # Strains
     exx = dx_grad[0]
@@ -80,7 +84,7 @@ data_space = SolutionSpace({})
 integrand_map = {
     "plane_stress": {
         "target": ["SURFACE1", "SURFACE2"],
-        "integrand": strain_energy_integrad,
+        "integrand": strain_energy_integrand,
     },
 }
 
@@ -93,7 +97,12 @@ bc_map = {
     "move": {
         "type": "dirichlet",
         "target": ["LINE1"],
-        "input": ["dx"],
+        "input": ["dx", "dy"],
+    },
+    "move_y": {
+        "type": "dirichlet",
+        "target": ["LINE2", "LINE4"],
+        "input": ["dy"],
     },
 }
 
@@ -136,8 +145,12 @@ mat = model.create_matrix()
 
 # An approach for enforced dirichlet bcs
 nodes = mesh.get_nodes_in_domain("LINE1")
+
+
 for i in nodes:
-    x[f"submodel.soln.dx[{i}]"] = 5.0
+    y_coord = mesh.X[i][1]
+    x[f"submodel.soln.dx[{i}]"] = -np.cos(np.pi * y_coord / 5)
+    # x[f"submodel.soln.dy[{i}]"] = 5.0
 
 model.eval_gradient(x, g)
 model.eval_hessian(x, mat)

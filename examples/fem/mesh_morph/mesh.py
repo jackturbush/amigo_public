@@ -5,8 +5,8 @@ gmsh.initialize()
 gmsh.model.add("mesh")
 
 # Mesh refinement at nodes
-lc = 5e-1
-lc1 = 5e-1
+lc = 10e-1
+lc1 = 1e-1
 
 # Geometry dimentions
 hb = 5  # Boundary length and width
@@ -14,14 +14,14 @@ hm = 1  # Magnet length and width
 
 # Add points
 geom = gmsh.model.geo
-geom.addPoint(hb, -hb, 0, lc, 1)
-geom.addPoint(hb, hb, 0, lc, 2)
+geom.addPoint(hb, -hb, 0, lc1, 1)
+geom.addPoint(hb, hb, 0, lc1, 2)
 geom.addPoint(-hb, hb, 0, lc, 3)
 geom.addPoint(-hb, -hb, 0, lc, 4)
-geom.addPoint(hm, -hm, 0, lc1, 5)
-geom.addPoint(hm, hm, 0, lc1, 6)
-geom.addPoint(-hm, hm, 0, lc1, 7)
-geom.addPoint(-hm, -hm, 0, lc1, 8)
+geom.addPoint(hm, -hm, 0, lc, 5)
+geom.addPoint(hm, hm, 0, lc, 6)
+geom.addPoint(-hm, hm, 0, lc, 7)
+geom.addPoint(-hm, -hm, 0, lc, 8)
 
 # Define lines for the boundary loop
 geom.addLine(1, 2, 1)
