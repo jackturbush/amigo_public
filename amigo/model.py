@@ -1058,7 +1058,8 @@ class Model:
                 fixed_vars.append(self.get_indices(expr))
             else:
                 fixed_vars.append(self.get_indices(expr)[indices])
-        fixed_vars = np.concatenate(fixed_vars)
+        if fixed_vars:
+            fixed_vars = np.concatenate(fixed_vars)
         fixed_vars = np.unique(fixed_vars)
         fixed = VectorInt(len(fixed_vars))
         fixed.get_array()[:] = fixed_vars
