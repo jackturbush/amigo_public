@@ -41,6 +41,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install BLAS (Windows)
+        if: runner.os == 'Windows'
+        run: pip install mkl
+
       - name: Install amigo
         run: |
           pip install scikit-build-core pybind11 mpi4py numpy scipy matplotlib
