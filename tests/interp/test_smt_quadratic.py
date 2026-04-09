@@ -23,6 +23,7 @@ from smt.surrogate_models import KRG
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="module")
 def trained_krg():
     """KRG surrogate trained on y = x^2 over [0, 2]."""
@@ -87,25 +88,28 @@ def opt_result(trained_krg):
     upper["src.y"] = float("inf")
 
     opt = am.Optimizer(model, xvec, lower=lower, upper=upper)
-    data = opt.optimize({
-        "max_iterations": 200,
-        "initial_barrier_param": 1.0,
-        "convergence_tolerance": 1e-10,
-        "max_line_search_iterations": 10,
-        "init_affine_step_multipliers": False,
-        "init_least_squares_multipliers": False,
-    })
+    data = opt.optimize(
+        {
+            "max_iterations": 200,
+            "initial_barrier_param": 1.0,
+            "convergence_tolerance": 1e-10,
+            "max_line_search_iterations": 10,
+            "init_affine_step_multipliers": False,
+            "init_least_squares_multipliers": False,
+        }
+    )
     return xvec, data
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 def test_surrogate_accuracy(trained_krg):
     """KRG should interpolate y = x^2 to machine precision at training points."""
     sm = trained_krg
     x_check = np.array([[0.0], [0.5], [1.0], [1.5], [2.0]])
     pred = sm.predict_values(x_check).flatten()
-    expected = x_check.flatten()**2
+    expected = x_check.flatten() ** 2
     np.testing.assert_allclose(pred, expected, atol=1e-6)
 
 
