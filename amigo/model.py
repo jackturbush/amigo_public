@@ -935,7 +935,11 @@ class Model:
 
         if comp_name not in self.comp:
             registered = list(self.comp.keys())
-            hints = [c for c in registered if c.startswith(comp_name + ".") or c.endswith("." + comp_name)]
+            hints = [
+                c
+                for c in registered
+                if c.startswith(comp_name + ".") or c.endswith("." + comp_name)
+            ]
             msg = (
                 f"Component '{comp_name}' not found when resolving '{name}'. "
                 f"Registered components: {registered}"
