@@ -369,6 +369,7 @@ upper["bspline.control_points.x"] = 25.0
 
 # Optimize
 opt = am.Optimizer(model, x, lower=lower, upper=upper)
+opt = am.Optimizer(model, x, lower=lower, upper=upper, solver="mumps")
 data = opt.optimize(
     {
         "initial_barrier_param": 1.0,

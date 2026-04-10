@@ -1,0 +1,4 @@
+# Specific .gitignore for tests
+CMakeLists.txt
+*.cpp
+*.h
