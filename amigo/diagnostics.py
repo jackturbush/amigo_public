@@ -10,7 +10,7 @@ Usage
     import amigo as am
 
     diag = am.Diagnostics(model, x, lower, upper)
-    diag.run(
+    failed, details = diag.run(
         spotlights={
             "ic.res": ["velocity", "gamma", "altitude", "range", "mass"],
             "fc.res": ["velocity", "gamma", "altitude"],
@@ -101,6 +101,15 @@ class Diagnostics:
             IC/FC targets) as part of the initial guess.
         tol:
             Residual tolerance used for pass/fail in spotlight check.
+
+        Returns
+        -------
+        failed : bool
+            ``True`` if any check failed, ``False`` if every check passed.
+        details : dict[str, bool]
+            Per-check failure flags.  Keys: ``"nan_inf"``, ``"bounds"``,
+            ``"connectivity"``, ``"constraints"``, ``"spotlights"``.
+            Each value is ``True`` if that check failed, ``False`` if it passed.
         """
         spotlights = spotlights or {}
 
