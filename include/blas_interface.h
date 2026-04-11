@@ -43,11 +43,6 @@ extern void dtptrs_(const char* uplo, const char* transa, const char* diag,
                     const int* n, const int* nrhs, const double* a, double* b,
                     const int* ldb, int* info);
 
-// Solve a system of equations A * X = B  or  A**T * X = B,
-extern void dtrtrs_(const char* uplo, const char* trans, const char* diag,
-                    const int* n, const int* nrhs, const double* A,
-                    const int* lda, double* B, const int* ldb, int* info);
-
 // Solve the equations op( A )*X = alpha*B or X*op( A ) = alpha*B,
 extern void dtrsm_(const char* side, const char* uplo, const char* transa,
                    const char* diag, const int* m, const int* n,
@@ -64,6 +59,11 @@ extern void dpotrf_(const char* uplo, const int* n, double* a, const int* lda,
 // Symmetric LDL factorization
 extern void dsytrf_(const char* uplo, const int* n, double* A, const int* lda,
                     int* ipiv, double* work, const int* lwork, int* info);
+
+// Solve the system with the LDL factorization
+extern void dsytrs_(const char* uplo, const int* n, const int* nrhs,
+                    const double* a, const int* lda, const int* ipiv, double* b,
+                    const int* ldb, int* info);
 
 // Find the argmax
 extern int izamax_(const int* n, const std::complex<double>* a, const int* inc);
@@ -128,6 +128,11 @@ extern void zpotrf_(const char* uplo, const int* n, double* a, const int* lda,
 // Symmetric LDL factorization
 extern void zsytrf_(const char* uplo, const int* n, double* A, const int* lda,
                     int* ipiv, double* work, const int* lwork, int* info);
+
+// Solve the system with the LDL factorization
+extern void zsytrs_(const char* uplo, const int* n, const int* nrhs,
+                    const double* a, const int* lda, const int* ipiv, double* b,
+                    const int* ldb, int* info);
 }
 
 namespace amigo {
@@ -135,9 +140,9 @@ namespace amigo {
 template <typename T>
 int blas_imax(const int* n, const T* a, const int* inc) {
   if constexpr (std::is_same<T, double>::value) {
-    return idamax_(n, a, inc);
+    return idamax_(n, a, inc) - 1;
   } else if constexpr (std::is_same<T, std::complex<double>>::value) {
-    return izamax_(n, a, inc);
+    return izamax_(n, a, inc) - 1;
   } else {
     static_assert(
         std::is_same_v<T, double> || std::is_same_v<T, std::complex<double>>,
@@ -287,6 +292,21 @@ void lapack_sytrf(const char* uplo, const int* n, T* a, const int* lda,
     static_assert(
         std::is_same_v<T, double> || std::is_same_v<T, std::complex<double>>,
         "lapack_sytrf only supports double and std::complex<double>");
+  }
+}
+
+template <typename T>
+void lapack_sytrs(const char* uplo, const int* n, const int* nrhs, const T* a,
+                  const int* lda, const int* ipiv, T* b, const int* ldb,
+                  int* info) {
+  if constexpr (std::is_same<T, double>::value) {
+    dsytrs_(uplo, n, nrhs, a, lda, ipiv, b, ldb, info);
+  } else if constexpr (std::is_same<T, std::complex<double>>::value) {
+    zsytrs_(uplo, n, nrhs, a, lda, ipiv, b, ldb, info);
+  } else {
+    static_assert(
+        std::is_same_v<T, double> || std::is_same_v<T, std::complex<double>>,
+        "lapack_sytrs only supports double and std::complex<double>");
   }
 }
 

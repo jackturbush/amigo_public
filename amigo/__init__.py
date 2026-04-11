@@ -29,6 +29,7 @@ from .amigo import (
     OptimizationProblem,
     SparseCholesky,
     SparseLDL,
+    SolverType,
     OrderingType,
     MemoryLocation,
 )

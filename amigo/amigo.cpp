@@ -538,11 +538,27 @@ PYBIND11_MODULE(amigo, mod) {
       .def("factor", &amigo::SparseCholesky<double>::factor)
       .def("solve", &amigo::SparseCholesky<double>::solve);
 
+  py::enum_<amigo::SparseLDL<double>::SolverType>(mod, "SolverType")
+      .value("LDL", amigo::SparseLDL<double>::SolverType::LDL)
+      .value("CHOLESKY", amigo::SparseLDL<double>::SolverType::CHOLESKY)
+      .export_values();
+
   py::class_<amigo::SparseLDL<double>,
              std::shared_ptr<amigo::SparseLDL<double>>>(mod, "SparseLDL")
-      .def(py::init<std::shared_ptr<amigo::CSRMat<double>>>())
+      .def(py::init<std::shared_ptr<amigo::CSRMat<double>>,
+                    amigo::SparseLDL<double>::SolverType, double, double,
+                    double>(),
+           py::arg("mat"),
+           py::arg("solver_type") = amigo::SparseLDL<double>::SolverType::LDL,
+           py::arg("ustab") = 0.01, py::arg("pivot_tol") = 1e-14,
+           py::arg("delay_growth") = 2.0)
       .def("factor", &amigo::SparseLDL<double>::factor)
-      .def("solve", &amigo::SparseLDL<double>::solve);
+      .def("solve", &amigo::SparseLDL<double>::solve)
+      .def("get_inertia", [](const amigo::SparseLDL<double>& self) {
+        int npos = 0, nneg = 0;
+        self.get_inertia(&npos, &nneg);
+        return py::make_tuple(npos, nneg);
+      });
 
 #ifdef AMIGO_USE_CUDA
   py::class_<amigo::CSRMatFactorCuda, std::shared_ptr<amigo::CSRMatFactorCuda>>(

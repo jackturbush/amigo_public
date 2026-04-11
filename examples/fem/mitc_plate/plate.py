@@ -166,16 +166,21 @@ print("Solving...")
 start_time = time.perf_counter()
 if args.solver == "cholesky":
     chol = am.SparseCholesky(mat)
-    chol.factor()
+    flag = chol.factor()
+    if flag != 0:
+        print(f"Cholesky factor flag {flag}")
 
     x[:] = g[:]
     chol.solve(x.get_vector())
 elif args.solver == "ldl":
-    ldl = am.SparseLDL(mat)
-    ldl.factor()
+    ldl = am.SparseLDL(mat, am.SolverType.LDL, ustab=0.01)
+    flag = ldl.factor()
+    if flag != 0:
+        print(f"LDL factor flag {flag}")
 
     x[:] = g[:]
     ldl.solve(x.get_vector())
+    print("Inertia: ", ldl.get_inertia())
 elif args.solver == "scipy":
     csr = am.tocsr(mat)
     x[:] = spsolve(csr, g[:])

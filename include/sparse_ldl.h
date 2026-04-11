@@ -6,12 +6,23 @@
 
 namespace amigo {
 
+extern "C" {
+
+void dtrtrs_(const char* uplo, const char* trans, const char* diag,
+             const int* n, const int* nrhs, const double* A, const int* lda,
+             double* B, const int* ldb, int* info);
+}
+
 template <typename T>
 class SparseLDL {
  public:
-  SparseLDL(std::shared_ptr<CSRMat<T>> mat, double ustab = 0.1,
+  enum class SolverType { LDL, CHOLESKY };
+
+  SparseLDL(std::shared_ptr<CSRMat<T>> mat,
+            SolverType solver_type = SolverType::LDL, double ustab = 0.01,
             double pivot_tol = 1e-14, double delay_growth = 2.0)
       : mat(mat),
+        solver_type(solver_type),
         ustab(ustab),
         pivot_tol(pivot_tol),
         delay_growth(delay_growth) {
@@ -49,7 +60,7 @@ class SparseLDL {
   }
 
   /**
-   * @brief Perform a LDL^{T} factorization of the matrix
+   * @brief Perform an LDL^{T} factorization of the matrix
    *
    * @return int The return flag
    */
@@ -61,7 +72,13 @@ class SparseLDL {
     mat->get_data(&nrows, &ncols, &nnz, &rowp, &cols, &data);
 
     // Perform the numerical factorization
-    return factor_numeric(nrows, rowp, cols, data);
+    int info = 0;
+    if (solver_type == SolverType::CHOLESKY) {
+      info = factor_numeric<SolverType::CHOLESKY>(nrows, rowp, cols, data);
+    } else {
+      info = factor_numeric<SolverType::LDL>(nrows, rowp, cols, data);
+    }
+    return info;
   }
 
   /**
@@ -73,7 +90,13 @@ class SparseLDL {
    *
    * @param xvec
    */
-  void solve(Vector<T>* xvec) {}
+  void solve(Vector<T>* xvec) const {
+    if (solver_type == SolverType::CHOLESKY) {
+      solve_cholesky(xvec);
+    } else {  // solver_type == LDL
+      solve_ldl(xvec);
+    }
+  }
 
   /**
    * @brief Get the inertia of the matrix based on the factorization
@@ -81,9 +104,14 @@ class SparseLDL {
    * @param npos Number of positive eigenvalues
    * @param nneg Number of negative eigenvalues
    */
-  void get_inertia(int* npos, int* nneg) {
+  void get_inertia(int* npos, int* nneg) const {
     *npos = 0;
     *nneg = 0;
+    if (solver_type == SolverType::LDL) {
+      for (int ks = 0; ks < num_snodes; ks++) {
+        add_pivot_inertia(ks, npos, nneg);
+      }
+    }
   }
 
  private:
@@ -346,7 +374,11 @@ class SparseLDL {
         *L = &factor_data[m.factor_offset];
       }
       if (ipiv) {
-        *ipiv = &int_data[m.int_offset + m.num_pivots + m.num_delayed];
+        if (m.num_ipiv == 0) {
+          *ipiv = nullptr;
+        } else {
+          *ipiv = &int_data[m.int_offset + m.num_pivots + m.num_delayed];
+        }
       }
     }
 
@@ -398,6 +430,7 @@ class SparseLDL {
    *
    * Compute the contribution block
    */
+  template <SolverType stype>
   int factor_numeric(const int ncols, const int colp[], const int rows[],
                      const T data[]) {
     // Clear any old factorization data
@@ -437,8 +470,19 @@ class SparseLDL {
                             nchildren, stack, F);
 
       // Factor the frontal matrix and save the results
-      info = factor_front_matrix(ks, fully_summed, front_size, front_vars, F,
-                                 stack, fact);
+      int info = 0;
+      if constexpr (stype == SolverType::CHOLESKY) {
+        // The Cholesky code works for both frontal and root matrices
+        info = factor_front_matrix_cholesky(ks, fully_summed, front_size,
+                                            front_vars, F, stack, fact);
+      } else {
+        if (fully_summed < front_size) {
+          info = factor_front_matrix(ks, fully_summed, front_size, front_vars,
+                                     F, stack, fact);
+        } else {  // fully_summed = front_size
+          info = factor_root_matrix(ks, front_size, front_vars, F, stack, fact);
+        }
+      }
 
       // Check the flag
       if (info != 0) {
@@ -565,19 +609,53 @@ class SparseLDL {
   }
 
   /**
-   * @brief Get the alpha and beta values defined by Duff
+   * @brief Get the absolute max value in the column of F and within the fully
+   * summed rows
    *
-   * alpha = max_{j >= k+1} |F[j, k]|
-   * beta  = max_{j >= k+2} |F[j, k]|
+   * Note that k < npc < ldf must hold on input
+   *
+   * @param F The entries of the frontal matrix
+   * @param ldf The leading dimension of the frontal matrix
+   * @param npc The number of pivot candidates remaining
+   * @param k The current column of the matrix
+   * @param amax The maximum absolute value of the sub-diagonal elements
+   * @param r Row index for the max absolute pivot candidate
+   * @param i_pc The index of the maximum pivot candidate
    */
-  void get_max_subcolumn_entries(const T F[], int ldf, int k, double& alpha,
-                                 double& beta) {
-    // // Search first for beta in column k. Then look at F[k + 1, k]
-    // int n = ldf - (k + 2);
-    // int one = 1;
-    // int r = k + 2 + blas_imax<T>(&n, &F[k + 2 + ldf * k], &one);
+  void get_max_subdiagonal(const T F[], int ldf, int npc, int k, double* amax,
+                           double* amaxr, int* r) const {
+    // Dimension of the remaining pivot candidates
+    int nsub_pc = npc - (k + 1);
 
-    // beta = std::abs(F[r + ])
+    // Find the max value below the diagonal but before npc
+    double rval = 0.0;
+    int row = -1;
+    if (nsub_pc > 0) {
+      int one = 1;
+      row = k + 1 + blas_imax<T>(&nsub_pc, &F[k + 1 + ldf * k], &one);
+      rval = std::abs(F[row + ldf * k]);
+    }
+    if (r) {
+      *r = row;
+    }
+    if (amaxr) {
+      *amaxr = rval;
+    }
+
+    // Find the max value below npc
+    int nsub = ldf - npc;
+    double sval = 0.0;
+    if (nsub > 0) {
+      int one = 1;
+      int subrow = npc + blas_imax<T>(&nsub, &F[npc + ldf * k], &one);
+      sval = std::abs(F[subrow + ldf * k]);
+    }
+
+    if (sval > rval) {
+      *amax = sval;
+    } else {
+      *amax = rval;
+    }
   }
 
   /**
@@ -586,23 +664,24 @@ class SparseLDL {
    *
    * @param F The frontal matrix
    * @param ldf The leading dimension of the frontal matrix
+   * @param npc The current number of pivot candidates
    * @param k The current column in the frontal factorization
+   * @param r The row index for the max absolute value from pivot candidates
    * @return true The pivot is acceptable
    * @return false The pivot is not acceptable
    */
-  bool check_1x1_column(const T F[], int ldf, int k) const {
+  bool check_1x1_column(const T F[], int ldf, int npc, int k, int* r) const {
+    // fkk = abs(F[k, k])
     double fkk = std::abs(F[k * (ldf + 1)]);
 
-    // This pivot is below the tolerance, we can't use it
+    // Find the max sub-diagonal entry
+    double frk;
+    get_max_subdiagonal(F, ldf, npc, k, &frk, nullptr, r);
+
+    // The diagonal pivot is below the tolerance, we can't use it
     if (fkk < pivot_tol) {
       return false;
     }
-
-    // Find the max absolute value in the column
-    int n = ldf - (k + 1);
-    int one = 1;
-    int r = k + 1 + blas_imax<T>(&n, &F[k + 1 + ldf * k], &one);
-    double frk = std::abs(F[r + ldf * k]);
 
     // Perform the pivot stability check
     if (fkk >= ustab * frk) {
@@ -613,36 +692,107 @@ class SparseLDL {
   }
 
   /**
-   * @brief Check if swapping the candidate column satisfies the 1x1 or 2x2
-   * stability condition
+   * @brief Get the max absolute value in a candidate row/column swap in the new
+   * hypothetical column that lies below the diagonal
    *
-   * Note that on input the function requires that c > k
+   * Note that on input k < c < ldf
+   *
+   *          k     c
+   *   [*                     ]
+   *   [   *                  ]
+   * k [      *               ]
+   *   [         *            ]
+   * c [      .  .  *         ]
+   *   [            .  *      ]
+   *   [            .     *   ]
+   *   [            .        *]
+   *
+   * Dots indicate candidate row/column entries that would be below the new
+   * diagonal. The F[c, c] entry would be the new diagonal entry.
+   *
+   * @param F The entries in the front matrix
+   * @param ldf The row/column dimension of F
+   * @param k The current column index that is factored in F
+   * @param c The candidate row/column to swap
+   * @param amax The computed max absolute value
+   * @param p The row containing the absolute max from the pivot entries
+   * @return int The row index corresponding to the max value
+   */
+  void get_max_candidate(const T F[], int ldf, int npc, int k, int c,
+                         double* amax, int* p) const {
+    // Search the candidate row c starting from k
+    int ncols = c - k;
+    double p1val = 0.0;
+    int p1 = -1;
+    if (ncols > 0) {
+      int p1 = k + blas_imax<T>(&ncols, &F[c + ldf * k], &ldf);
+      p1val = std::abs(F[p1 + ldf * k]);
+    }
+
+    // Test the sub diagonal from c
+    double sval, p2val;
+    int p2;
+    get_max_subdiagonal(F, ldf, npc, c, &sval, &p2val, &p2);
+
+    if (p1val > sval) {
+      *p = p1;
+      *amax = p1val;
+    } else {
+      *p = p2;
+      *amax = sval;
+    }
+  }
+
+  /**
+   * @brief Check whether the pivot candidate will satisfy the 1x1 pivot test
    *
    * @param F The frontal matrix
    * @param ldf The leading dimension of the frontal matrix
+   * @param npc The current number of pivot candidates
    * @param k The current column in the frontal factorization
-   * @param c The candidate pivot column to check
-   * @return int 1 if 1x1 pivot, 2 if 2x2 pivot, 0 if not acceptable
+   * @param c The candidate pivot
+   * @param p The index of the max entry in the pivot row
+   * @return true The pivot is acceptable
+   * @return false The pivot is not acceptable
    */
-  int check_swap_candidate(const T F[], int ldf, int k, int c) const {
+  bool check_1x1_candidate(const T F[], int ldf, int npc, int k, int c,
+                           int* p) const {
+    // Check if fcc is
     double fcc = std::abs(F[c * (ldf + 1)]);
 
-    // This pivot is below the tolerance, we can't use it
+    // Find the max sub-diagonal entry
+    double frc;
+    get_max_candidate(F, ldf, npc, k, c, &frc, p);
+
+    // The diagonal pivot is below the tolerance, we can't use it
     if (fcc < pivot_tol) {
-      return 0;  // Indicating pivoting is not possible
+      return false;
     }
 
-    // Find the max value in the candidate pivot row. The candidate row
+    // Perform the pivot stability check
+    if (fcc >= ustab * frc) {
+      return true;
+    }
 
-    // // This candidate can be used for a 1x1 pivot
-    // if (fcc >= ustab * frc) {
-    //   return 1;
-    // }
+    return false;
+  }
 
-    // 1x1 pivoting fails. What about 2x2 pivots?
-
-    // None of the pivot options are suitable
-    return 0;
+  /**
+   * @brief Check if the candidate obtained by the candidate satisfies the
+   * stability test
+   *
+   * @param F The frontal matrix
+   * @param ldf The leading dimension of the frontal matrix
+   * @param npc The current number of pivot candidates
+   * @param k The current column in the frontal factorization
+   * @param c The candidate pivot
+   * @param p The index of the max entry in the pivot row
+   * @return true The 2x2 pivot is acceptable
+   * @return false The 2x2 pivot is not acceptable
+   */
+  bool check_2x2_candidate(const T F[], int ldf, int npc, int k, int c,
+                           int p) const {
+    return false;
   }
 
   /**
@@ -671,12 +821,33 @@ class SparseLDL {
     vars[k] = vars[c];
     vars[c] = t;
 
-    // Swap the rows
-    blas_swap<T>(&ldf, &F[k], &ldf, &F[c], &ldf);
+    T tmp;
 
-    // Swap the columns
-    int one = 1;
-    blas_swap<T>(&ldf, &F[k * ldf], &one, &F[c * ldf], &one);
+    // Swap entries [k, 0:k - 1] with [c, 0:k - 1]
+    for (int j = 0; j < k; j++) {
+      tmp = F[k + j * ldf];
+      F[k + j * ldf] = F[c + j * ldf];
+      F[c + j * ldf] = tmp;
+    }
+
+    // Swap diagonal entries
+    tmp = F[k + k * ldf];
+    F[k + k * ldf] = F[c + c * ldf];
+    F[c + c * ldf] = tmp;
+
+    // Swap [j, k] <-> [c, j] for k < j < c
+    for (int j = k + 1; j < c; j++) {
+      tmp = F[j + k * ldf];
+      F[j + k * ldf] = F[c + j * ldf];
+      F[c + j * ldf] = tmp;
+    }
+
+    // Swap entries below both rows/cols: [j, k] <-> [j, c] for j > c
+    for (int j = c + 1; j < ldf; j++) {
+      tmp = F[j + k * ldf];
+      F[j + k * ldf] = F[j + c * ldf];
+      F[j + c * ldf] = tmp;
+    }
   }
 
   /**
@@ -710,30 +881,26 @@ class SparseLDL {
     for (int k = 0; k < num_candidates;) {
       // Default to pivot not accepted (s = 0)
       int s = 0;
-      if (check_1x1_column(F, ldf, k)) {
+
+      // The index and maximum value of the pivot candidate
+      int r = 0, p = 0;
+      if (check_1x1_column(F, ldf, num_candidates, k, &r)) {
         s = 1;  // This column is okay, and no swapping required
-      } else {
-        // Scan through the remaining candidates
-        for (int c = k + 1; c < num_candidates; c++) {
-          // Check for a swap candidate
-          s = check_swap_candidate(F, ldf, k, c);
-
-          if (s == 1) {
-            // Perform a symmetric swap of the rows/columns
-            symm_swap(front_vars, F, ldf, k, c);
-            break;
-          } else if (s == 2) {
-            // Keep column k in place, swap c with k + 1
-            if (k + 1 != c) {
-              symm_swap(front_vars, F, ldf, k + 1, c);
-            }
-
-            // Tag these variables as a 2x2 pivot
-            front_vars[k] = -(front_vars[k] + 1);
-            front_vars[k + 1] = -(front_vars[k + 1] + 1);
-            break;
-          }
+      } else if (k < num_candidates - 1 &&
+                 check_1x1_candidate(F, ldf, num_candidates, k, r, &p)) {
+        symm_swap(front_vars, F, ldf, k, r);
+        s = 1;
+      } else if (k < num_candidates - 2 &&
+                 check_2x2_candidate(F, ldf, num_candidates, k, r, p)) {
+        symm_swap(front_vars, F, ldf, k, r);
+        if (k + 1 != p) {
+          symm_swap(front_vars, F, ldf, k + 1, p);
         }
+
+        // Indicate the 2x2 swap
+        front_vars[k] = -(front_vars[k] + 1);
+        front_vars[k + 1] = -(front_vars[k + 1] + 1);
+        s = 2;
       }
 
       // No acceptable pivots found, we have to delay this variable
@@ -741,7 +908,9 @@ class SparseLDL {
         symm_swap(front_vars, F, ldf, k, num_candidates - 1);
         num_candidates -= 1;
 
-        // No need to continue this iteration of the loop
+        // No need to continue this iteration of the loop.
+        // k remains the same the next loop, but the number of candidates
+        // has decreased.
         continue;
       }
 
@@ -872,6 +1041,276 @@ class SparseLDL {
   }
 
   /**
+   * @brief Solve the system of equations L * x = b
+   *
+   * On input x = b on output the solution is stored in x
+   *
+   * @param n Number of rows/columns in L
+   * @param piv Pivots (used to detect 1x1 and 2x2 pivots)
+   * @param L The entries in the matrix
+   * @param ldl The leading dimension of L
+   * @param x The right hand side on input and the solution output
+   */
+  void solve_pivot_lower(const int n, const int piv[], const T L[],
+                         const int ldl, T x[]) const {
+    for (int j = 0; j < n;) {
+      if (piv[j] >= 0) {
+        for (int i = j + 1; i < n; i++) {
+          x[i] -= L[i + ldl * j] * x[j];
+        }
+        j += 1;
+      } else {
+        for (int i = j + 2; i < n; i++) {
+          x[i] -= L[i + ldl * j] * x[j] + L[i + ldl * (j + 1)] * x[j + 1];
+        }
+        j += 2;
+      }
+    }
+  }
+
+  /**
+   * @brief Solve the equations D * x = b where D is stored in L
+   *
+   * On input x = b on output the solution is stored in x
+   *
+   * @param n Number of rows/columns in L
+   * @param piv Pivots (used to detect 1x1 and 2x2 pivots)
+   * @param L The entries in the matrix
+   * @param ldl The leading dimension of L
+   * @param x The right hand side on input and the solution output
+   */
+  void solve_pivot_diagonal(const int n, const int piv[], const T L[],
+                            const int ldl, T x[]) const {
+    for (int i = 0; i < n;) {
+      if (piv[i] >= 0) {
+        x[i] /= L[i * (ldl + 1)];
+        i++;
+      } else {
+        T d11 = L[i * (ldl + 1)];
+        T d21 = L[i * (ldl + 1) + 1];
+        T d22 = L[(i + 1) * (ldl + 1)];
+
+        T inv = 1.0 / (d11 * d22 - d21 * d21);
+        T x1 = x[i];
+        T x2 = x[i + 1];
+        x[i] = inv * (d22 * x1 - d21 * x2);
+        x[i + 1] = inv * (d11 * x2 - d21 * x1);
+        i += 2;
+      }
+    }
+  }
+
+  /**
+   * @brief Solve the system of equations L^{T} * x = b
+   *
+   * On input x = b on output the solution is stored in x
+   *
+   * @param n Number of rows/columns in L
+   * @param piv Pivots (used to detect 1x1 and 2x2 pivots)
+   * @param L The entries in the matrix
+   * @param ldl The leading dimension of L
+   * @param x The right hand side on input and the solution output
+   */
+  void solve_pivot_transpose(const int n, const int piv[], const T L[],
+                             const int ldl, T x[]) const {
+    for (int i = n - 1; i >= 0;) {
+      if (piv[i] >= 0) {
+        for (int j = i + 1; j < n; j++) {
+          x[i] -= L[j + ldl * i] * x[j];
+        }
+        i -= 1;
+      } else {
+        for (int j = i + 2; j < n; j++) {
+          x[i - 1] -= L[j + ldl * (i - 1)] * x[j];
+          x[i] -= L[j + ldl * i] * x[j];
+        }
+        i -= 2;
+      }
+    }
+  }
+
+  /**
+   * @brief Solve the system of equations based on an LDL factorization
+   *
+   * @param xvec The right hand side and solution vector
+   */
+  void solve_ldl(Vector<T>* xvec) const {
+    T* x = xvec->get_array();
+
+    int max_pivots = fact.get_max_pivots();
+    int max_delayed = fact.get_max_delayed();
+    T* temp = new T[max_pivots + max_delayed + max_contrib];
+
+    int ns = 0;
+    for (int ks = 0; ks < num_snodes; ks++) {
+      // Get the pointers to the factor data
+      int num_pivots, num_delayed, num_ipiv;
+      const int* pivots = nullptr;
+      const int* delayed = nullptr;
+      const T* L;
+      const int* ipiv = nullptr;
+
+      // Get the factor L = (L11, L21) that constitute the factor data
+      fact.get_factor(ks, &num_pivots, &pivots, &num_delayed, &delayed, &L,
+                      &num_ipiv, &ipiv);
+      int num_contrib = contrib_ptr[ks + 1] - contrib_ptr[ks];
+      int ldl = num_pivots + num_delayed + num_contrib;
+
+      // Extract the variables from x - 2x2 pivots have negative entries
+      for (int j = 0; j < num_pivots; j++) {
+        int var = pivots[j];
+        if (var < 0) {
+          var = -var - 1;
+        }
+        temp[j] = x[var];
+      }
+
+      if (ipiv) {
+        int nrhs = 1;
+        int info;
+        lapack_sytrs("L", &ldl, &nrhs, L, &ldl, ipiv, temp, &ldl, &info);
+      } else {
+        // Find the solution t1 = L11^{-1} * t1, overwriting temp
+        // with the solution
+        solve_pivot_lower(num_pivots, pivots, L, ldl, temp);
+
+        // Compute the matrix-vector t2 = L21 * t1 and add the contributions
+        // to the lower block
+        int size = num_delayed + num_contrib;
+        T alpha = 1.0, beta = 0.0;
+        int inc = 1;
+        blas_gemv<T>("N", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
+                     temp, &inc, &beta, &temp[num_pivots], &inc);
+
+        // Add the contributions
+        for (int j = 0, jj = num_pivots; j < num_delayed; j++, jj++) {
+          x[delayed[j]] -= temp[jj];
+        }
+        for (int jp = contrib_ptr[ks], jj = num_pivots + num_delayed;
+             jp < contrib_ptr[ks + 1]; jp++, jj++) {
+          x[contrib_rows[jp]] -= temp[jj];
+        }
+
+        // Compute x = D11^{1} * temp
+        solve_pivot_diagonal(num_pivots, pivots, L, ldl, temp);
+      }
+
+      // Assign the entries back
+      for (int j = 0; j < num_pivots; j++) {
+        int var = pivots[j];
+        if (var < 0) {
+          var = -var - 1;
+        }
+        x[var] = temp[j];
+      }
+    }
+
+    for (int ks = num_snodes - 1; ks >= 0; ks--) {
+      // Get the pointers to the factor data
+      int num_pivots, num_delayed, num_ipiv;
+      const int* pivots = nullptr;
+      const int* delayed = nullptr;
+      const T* L;
+      const int* ipiv;
+
+      // Get the factor L = (L11, L21) that constitute the factor data
+      fact.get_factor(ks, &num_pivots, &pivots, &num_delayed, &delayed, &L,
+                      &num_ipiv, &ipiv);
+
+      if (!ipiv) {
+        int num_contrib = contrib_ptr[ks + 1] - contrib_ptr[ks];
+        int ldl = num_pivots + num_delayed + num_contrib;
+
+        // Extract the variables from x
+        for (int j = 0; j < num_pivots; j++) {
+          int var = pivots[j];
+          if (var < 0) {
+            var = -var - 1;
+          }
+          temp[j] = x[var];
+        }
+
+        // Collect the values from the contributions
+        for (int j = 0, jj = num_pivots; j < num_delayed; j++, jj++) {
+          temp[jj] = x[delayed[j]];
+        }
+        for (int jp = contrib_ptr[ks], jj = num_pivots + num_delayed;
+             jp < contrib_ptr[ks + 1]; jp++, jj++) {
+          temp[jj] = x[contrib_rows[jp]];
+        }
+
+        // Compute the matrix-vector product
+        int size = num_delayed + num_contrib;
+        T alpha = -1.0, beta = 1.0;
+        int inc = 1;
+        blas_gemv<T>("T", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
+                     &temp[num_pivots], &inc, &beta, temp, &inc);
+
+        // Solve L11^{T} * x = temp
+        solve_pivot_transpose(num_pivots, pivots, L, ldl, temp);
+
+        // Assign the entries back
+        for (int j = 0; j < num_pivots; j++) {
+          int var = pivots[j];
+          if (var < 0) {
+            var = -var - 1;
+          }
+          x[var] = temp[j];
+        }
+      }
+    }
+
+    delete[] temp;
+  }
+
+  void add_pivot_inertia(int ks, int* npos, int* nneg) const {
+    // Get the pointers to the factor data
+    int num_pivots, num_delayed;
+    const int* pivots = nullptr;
+
+    const T* L;
+
+    // Get the factor L = (L11, L21) that constitute the factor data
+    fact.get_factor(ks, &num_pivots, &pivots, &num_delayed, nullptr, &L);
+
+    int num_contrib = contrib_ptr[ks + 1] - contrib_ptr[ks];
+    int ldl = num_pivots + num_delayed + num_contrib;
+
+    int pos = 0, neg = 0;
+    for (int i = 0; i < num_pivots;) {
+      if (pivots[i] >= 0) {
+        if (L[i * (ldl + 1)] >= 0.0) {
+          pos++;
+        } else {
+          neg++;
+        }
+        i++;
+      } else {
+        T d11 = L[i * (ldl + 1)];
+        T d21 = L[i * (ldl + 1) + 1];
+        T d22 = L[(i + 1) * (ldl + 1)];
+        T det = d11 * d22 - d21 * d21;
+
+        if (det >= 0.0) {
+          if (d11 >= 0.0) {
+            pos += 2;
+          } else {
+            neg += 2;
+          }
+        } else {  // det < 1
+          pos++;
+          neg++;
+        }
+        i += 2;
+      }
+    }
+
+    // Set the output values
+    *npos += pos;
+    *nneg += neg;
+  }
+
+  /**
    * @brief Factor the frontal matrix now that it is assembled.
    *
    * This code works for the frontal and root matrices.
@@ -935,7 +1374,7 @@ class SparseLDL {
    *
    * @param xvec The right hand side and solution vector
    */
-  void solve_cholesky(Vector<T>* xvec) {
+  void solve_cholesky(Vector<T>* xvec) const {
     T* x = xvec->get_array();
 
     int max_pivots = fact.get_max_pivots();
@@ -949,33 +1388,37 @@ class SparseLDL {
       const int* pivots = nullptr;
       const int* delayed = nullptr;
       const T* L;
+
+      // Get the factor L = (L11, L21) that constitute the factor data
       fact.get_factor(ks, &num_pivots, &pivots, &num_delayed, &delayed, &L);
       int num_contrib = contrib_ptr[ks + 1] - contrib_ptr[ks];
       int ldl = num_pivots + num_delayed + num_contrib;
 
-      // Extract the variables from x
+      // Extract the variables from x corresponding to the pivots which are
+      // the columns shared by L11 and L21
       for (int j = 0; j < num_pivots; j++) {
         temp[j] = x[pivots[j]];
       }
 
+      // Compute the solution of L11 * t1 = t1
       int nrhs = 1;
-      int info = 0;
-      lapack_trtrs<T>("L", "N", "N", &num_pivots, &nrhs, L, &ldl, temp,
-                      &num_pivots, &info);
+      T alph = 1.0;
+      blas_trsm<T>("L", "L", "N", "N", &num_pivots, &nrhs, &alph, L, &ldl, temp,
+                   &num_pivots);
 
-      // Assign the entries back
+      // Assign the t1 entries back into the x vector
       for (int j = 0; j < num_pivots; j++) {
         x[pivots[j]] = temp[j];
       }
 
-      // Compute the matrix-vector product
+      // Compute the matrix-vector product t2 = L21 * t1
       int size = num_delayed + num_contrib;
       T alpha = 1.0, beta = 0.0;
       int inc = 1;
       blas_gemv<T>("N", &size, &num_pivots, &alpha, &L[num_pivots], &ldl, temp,
                    &inc, &beta, &temp[num_pivots], &inc);
 
-      // Add the contributions
+      // Add the contributions x -= t2
       for (int j = 0, jj = num_pivots; j < num_delayed; j++, jj++) {
         x[delayed[j]] -= temp[jj];
       }
@@ -991,6 +1434,8 @@ class SparseLDL {
       const int* pivots = nullptr;
       const int* delayed = nullptr;
       const T* L;
+
+      // Get the factor L = (L11, L21) that constitute the factor data
       fact.get_factor(ks, &num_pivots, &pivots, &num_delayed, &delayed, &L);
       int num_contrib = contrib_ptr[ks + 1] - contrib_ptr[ks];
       int ldl = num_pivots + num_delayed + num_contrib;
@@ -1009,20 +1454,20 @@ class SparseLDL {
         temp[jj] = x[contrib_rows[jp]];
       }
 
-      // Compute the matrix-vector product
+      // Compute the matrix-vector product t1 = t1 - L21 * t2
       int size = num_delayed + num_contrib;
       T alpha = -1.0, beta = 1.0;
       int inc = 1;
       blas_gemv<T>("T", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
                    &temp[num_pivots], &inc, &beta, temp, &inc);
 
-      // Right-hand-side is ready
+      // Compute the solution x1 = L11^{-T} * t1
       int nrhs = 1;
-      int info = 0;
-      lapack_trtrs<T>("L", "T", "N", &num_pivots, &nrhs, L, &ldl, temp,
-                      &num_pivots, &info);
+      T alph = 1.0;
+      blas_trsm<T>("L", "L", "T", "N", &num_pivots, &nrhs, &alph, L, &ldl, temp,
+                   &num_pivots);
 
-      // Assign the entries back
+      // Assign the t1 entries back to x
       for (int j = 0; j < num_pivots; j++) {
         x[pivots[j]] = temp[j];
       }
@@ -1439,6 +1884,9 @@ class SparseLDL {
 
   // The matrix
   std::shared_ptr<CSRMat<T>> mat;
+
+  // Solver type to use
+  SolverType solver_type;
 
   // Stability factor
   double ustab;
