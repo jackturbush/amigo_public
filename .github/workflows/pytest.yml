@@ -24,11 +24,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libopenmpi-dev libopenblas-dev
+          sudo apt-get install -y build-essential cmake libopenmpi-dev libopenblas-dev libmumps-dev
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install cmake open-mpi openblas
+        run: brew install cmake open-mpi openblas brewsci/num/mumps
 
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
