@@ -44,3 +44,9 @@ from .interfaces import (
     ExplicitOpenMDAOPostOptComponent,
     AmigoIndepVarComp,
 )
+from .trajectory import (
+    TrajectorySource,
+    TrajectoryComponent,
+    TrajectoryModel,
+    TrajModel,
+)
