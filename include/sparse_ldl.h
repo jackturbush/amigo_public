@@ -176,11 +176,11 @@ class SparseLDL {
       int tmp_top = top_idx;
 
       for (int k = 0; k < nchildren; k++) {
-        int delayed_pivots = idx[tmp_top - 2];
+        int num_delayed_pivots = idx[tmp_top - 2];
         int contrib_size = idx[tmp_top - 1];
         int* vars = &idx[tmp_top - 2 - contrib_size];
 
-        for (int j = 0; j < delayed_pivots; j++) {
+        for (int j = 0; j < num_delayed_pivots; j++) {
           int delayed = vars[j];
           if (front_indices[delayed] == -1) {
             front_indices[delayed] = fully_summed;
@@ -237,9 +237,9 @@ class SparseLDL {
 
       // Copy the values into the data array
       T* ptr = &work[top_work];
-      for (int j = num_pivots, k = 0; j < front_size; j++) {
-        for (int i = num_pivots; i < front_size; i++, k++) {
-          ptr[k] = F[i + front_size * j];
+      for (int j = num_pivots; j < front_size; j++) {
+        for (int i = num_pivots; i < front_size; i++, ptr++) {
+          ptr[0] = F[i + front_size * j];
         }
       }
       top_work += block_size;
@@ -248,13 +248,13 @@ class SparseLDL {
     /**
      * @brief Pop a contribution block from the top of the stack
      *
-     * @param delayed_pivots Number of delayed pivots
+     * @param num_delayed_pivots Number of delayed pivots
      * @param contrib_size Contribution block size
      * @param vars Indices for the contribution block
      * @param C The contribution block values
      */
-    void pop(int* delayed_pivots, int* contrib_size, int* vars[], T* C[]) {
-      *delayed_pivots = idx[top_idx - 2];
+    void pop(int* num_delayed_pivots, int* contrib_size, int* vars[], T* C[]) {
+      *num_delayed_pivots = idx[top_idx - 2];
       int cb_size = idx[top_idx - 1];
       *contrib_size = cb_size;
       *vars = &idx[top_idx - 2 - cb_size];
@@ -412,13 +412,12 @@ class SparseLDL {
       // Check the integer space needed
       int new_int_size = 2 * num_pivots;
       if (int_size + new_int_size > int_data.size()) {
-        int_data.resize(int(int_size + new_int_size + 0.5 * int_data.size()));
+        int_data.resize(int(int_size + new_int_size));
       }
 
       // Check if we need to to resize the factor data vector
       if (factor_size + block_size > factor_data.size()) {
-        factor_data.resize(
-            int(factor_size + block_size + 0.5 * factor_data.size()));
+        factor_data.resize(int(factor_size + block_size));
       }
 
       // Increase the size of the offsets
@@ -574,8 +573,13 @@ class SparseLDL {
     int* front_vars = &temp[ncols];  // Variables in the front
 
     // Compute proper size for the frontal matrix
+    // const int nblock = 64;
     int fdim = int(delay_growth * max_frontal_mat_dimension);
     std::vector<T> F(fdim * fdim);
+    // std::vector<T> W;
+    // if constexpr (stype == SolverType::LDL) {
+    //   W.resize(fdim * nblock);
+    // }
 
     // Use estimates of the contribution stack sizes
     int int_estimate = int(delay_growth * stack_int_estimate);
@@ -600,14 +604,17 @@ class SparseLDL {
       get_frontal_vars(ks, k, ns, nchildren, stack, front_indices, front_vars,
                        &fully_summed, &front_size);
 
-      // Resize the frontal matrix if needed
+      // Resize the frontal matrix if needed (this will only happen if stype ==
+      // SolverType::LDL)
       if (front_size > fdim) {
         fdim = front_size;
         F.resize(fdim * fdim);
+        // W.resize(fdim * nblock);
       }
 
       // Get the underlying array
       T* Fptr = F.data();
+      // T* Wptr = W.data();
 
       // Assemble the frontal matrix
       double t1 = MPI_Wtime();
@@ -626,7 +633,7 @@ class SparseLDL {
         if (fully_summed < front_size) {
           info = factor_front_matrix(ks, fully_summed, front_size, front_vars,
                                      Fptr, stack, fact);
-        } else {  // fully_summed = front_size
+        } else {
           info =
               factor_root_matrix(ks, front_size, front_vars, Fptr, stack, fact);
         }
@@ -682,20 +689,20 @@ class SparseLDL {
     }
 
     // Add the additional contributions from the delayed pivots
-    int f_summed =
+    int full_sum =
         stack.add_delayed_pivots(nchildren, ns, front_indices, front_vars);
 
     // Get the entries predicted from Cholesky
     int start = contrib_ptr[ks];
-    int cbsize = contrib_ptr[ks + 1] - start;
-    for (int j = 0, *row = &contrib_rows[start]; j < cbsize; j++, row++) {
-      front_indices[*row] = f_summed + j;
-      front_vars[f_summed + j] = *row;
+    int contrib_size = contrib_ptr[ks + 1] - start;
+    for (int j = 0, *row = &contrib_rows[start]; j < contrib_size; j++, row++) {
+      front_indices[*row] = full_sum + j;
+      front_vars[full_sum + j] = *row;
     }
 
     // Get the size of the front
-    *fully_summed = f_summed;
-    *front_size = f_summed + cbsize;
+    *fully_summed = full_sum;
+    *front_size = full_sum + contrib_size;
   }
 
   /**
@@ -729,58 +736,51 @@ class SparseLDL {
       for (int ip = colp[var]; ip < colp[var + 1]; ip++) {
         // Get the
         int i = rows[ip];
+        if (i >= var) {
+          // Get the front index
+          int ifront = front_indices[i];
 
-        // Get the front index
-        int ifront = front_indices[i];
-
-        // Add the contribution to the frontal matrix
-        if (ifront >= 0) {
-          Fj[ifront] += data[ip];
+          // Add the contribution to the frontal matrix
+          if (ifront >= 0) {
+            Fj[ifront] += data[ip];
+          }
         }
       }
     }
 
     // Add the contributions
     for (int child = 0; child < nchildren; child++) {
-      int delayed_pivots;
+      int num_delayed_pivots;
       int contrib_size;
       int* contrib_indices;
       T* C;
-      stack.pop(&delayed_pivots, &contrib_size, &contrib_indices, &C);
+      stack.pop(&num_delayed_pivots, &contrib_size, &contrib_indices, &C);
 
       for (int i = 0; i < contrib_size; i++) {
         contrib_indices[i] = front_indices[contrib_indices[i]];
       }
 
-      // Columns from the delayed pivots
-      for (int j = 0; j < delayed_pivots; j++) {
+      for (int j = 0; j < num_delayed_pivots; j++) {
         const int jfront = contrib_indices[j];
-        T* Fj = &F[front_size * jfront];
         const T* Cj = &C[contrib_size * j];
+        T* Fj = &F[front_size * jfront];
+        T* Fi = &F[jfront];
 
-        for (int i = 0; i < contrib_size; i++) {
+        for (int i = j; i < contrib_size; i++) {
           const int ifront = contrib_indices[i];
           if (ifront >= jfront) {
             Fj[ifront] += Cj[i];
+          } else {
+            Fi[front_size * ifront] += Cj[i];
           }
         }
       }
 
-      // Columns that are sorted
-      for (int j = delayed_pivots; j < contrib_size; j++) {
+      for (int j = num_delayed_pivots; j < contrib_size; j++) {
         const int jfront = contrib_indices[j];
-        T* Fj = &F[front_size * jfront];
         const T* Cj = &C[contrib_size * j];
+        T* Fj = &F[front_size * jfront];
 
-        // Unsorted rows from the delayed pivots
-        for (int i = 0; i < delayed_pivots; i++) {
-          const int ifront = contrib_indices[i];
-          if (ifront >= jfront) {
-            Fj[ifront] += Cj[i];
-          }
-        }
-
-        // Sorted rows (no check needed)
         for (int i = j; i < contrib_size; i++) {
           const int ifront = contrib_indices[i];
           Fj[ifront] += Cj[i];
@@ -812,8 +812,7 @@ class SparseLDL {
     double rval = 0.0;
     int row = -1;
     if (nsub_pc > 0) {
-      int one = 1;
-      row = k + 1 + blas_imax<T>(&nsub_pc, &F[k + 1 + ldf * k], &one);
+      row = k + 1 + blas_imax<T>(nsub_pc, &F[k + 1 + ldf * k], 1);
       rval = std::abs(F[row + ldf * k]);
     }
     if (r) {
@@ -827,8 +826,7 @@ class SparseLDL {
     int nsub = ldf - npc;
     double sval = 0.0;
     if (nsub > 0) {
-      int one = 1;
-      int subrow = npc + blas_imax<T>(&nsub, &F[npc + ldf * k], &one);
+      int subrow = npc + blas_imax<T>(nsub, &F[npc + ldf * k], 1);
       sval = std::abs(F[subrow + ldf * k]);
     }
 
@@ -906,7 +904,7 @@ class SparseLDL {
     double p1val = 0.0;
     int p1 = -1;
     if (ncols > 0) {
-      int p1 = k + blas_imax<T>(&ncols, &F[c + ldf * k], &ldf);
+      p1 = k + blas_imax<T>(ncols, &F[c + ldf * k], ldf);
       p1val = std::abs(F[p1 + ldf * k]);
     }
 
@@ -979,7 +977,7 @@ class SparseLDL {
   /**
    * @brief Perform a symmetric swap of the entries within the frontal matrix.
    *
-   * This code assumes k != c.
+   * This code assumes k < c!
    *
    * This performs the swap operation on the variables and numerical entries in
    * F. The variables are swapped using
@@ -1002,33 +1000,22 @@ class SparseLDL {
     vars[k] = vars[c];
     vars[c] = t;
 
-    T tmp;
-
-    // Swap entries [k, 0:k - 1] with [c, 0:k - 1]
-    for (int j = 0; j < k; j++) {
-      tmp = F[k + j * ldf];
-      F[k + j * ldf] = F[c + j * ldf];
-      F[c + j * ldf] = tmp;
-    }
+    // Swap entries F[k, 0:k] with F[c, 0:k]
+    blas_swap<T>(k, &F[k], ldf, &F[c], ldf);
 
     // Swap diagonal entries
-    tmp = F[k + k * ldf];
+    T tmp = F[k + k * ldf];
     F[k + k * ldf] = F[c + c * ldf];
     F[c + c * ldf] = tmp;
 
-    // Swap [j, k] <-> [c, j] for k < j < c
-    for (int j = k + 1; j < c; j++) {
-      tmp = F[j + k * ldf];
-      F[j + k * ldf] = F[c + j * ldf];
-      F[c + j * ldf] = tmp;
+    // Swap F[j, k] <-> F[c, j] for k < j < c
+    if (c > k + 1) {
+      blas_swap<T>(c - (k + 1), &F[k + 1 + k * ldf], 1, &F[c + (k + 1) * ldf],
+                   ldf);
     }
 
-    // Swap entries below both rows/cols: [j, k] <-> [j, c] for j > c
-    for (int j = c + 1; j < ldf; j++) {
-      tmp = F[j + k * ldf];
-      F[j + k * ldf] = F[j + c * ldf];
-      F[j + c * ldf] = tmp;
-    }
+    // Swap entries below both rows/cols: F[j, k] <-> F[j, c] for j > c
+    blas_swap<T>(ldf - (c + 1), &F[c + 1 + k * ldf], 1, &F[c + 1 + c * ldf], 1);
   }
 
   /**
@@ -1061,32 +1048,35 @@ class SparseLDL {
     // Loop until there are no candidates or k == num_candidates
     for (int k = 0; k < num_candidates;) {
       // Default to pivot not accepted (s = 0)
-      int s = 0;
+      int step = 0;
 
       // The index and maximum value of the pivot candidate
       int r = 0, p = 0;
       if (check_1x1_column(F, ldf, num_candidates, k, &r)) {
-        s = 1;  // This column is okay, and no swapping required
+        step = 1;  // This column is okay, and no swapping required
       } else if (k < num_candidates - 1 &&
                  check_1x1_candidate(F, ldf, num_candidates, k, r, &p)) {
         symm_swap(front_vars, F, ldf, k, r);
-        s = 1;
-      } else if (k < num_candidates - 2 &&
-                 check_2x2_candidate(F, ldf, num_candidates, k, r, p)) {
-        symm_swap(front_vars, F, ldf, k, r);
-        if (k + 1 != p) {
-          symm_swap(front_vars, F, ldf, k + 1, p);
-        }
-
-        // Indicate the 2x2 swap
-        front_vars[k] = -(front_vars[k] + 1);
-        front_vars[k + 1] = -(front_vars[k + 1] + 1);
-        s = 2;
+        step = 1;
       }
+      // else if (k < num_candidates - 2 &&
+      //            check_2x2_candidate(F, ldf, num_candidates, k, r, p)) {
+      //   symm_swap(front_vars, F, ldf, k, r);
+      //   if (k + 1 != p) {
+      //     symm_swap(front_vars, F, ldf, k + 1, p);
+      //   }
+
+      //   // Indicate the 2x2 swap
+      //   front_vars[k] = -(front_vars[k] + 1);
+      //   front_vars[k + 1] = -(front_vars[k + 1] + 1);
+      //   s = 2;
+      // }
 
       // No acceptable pivots found, we have to delay this variable
-      if (s == 0) {
-        symm_swap(front_vars, F, ldf, k, num_candidates - 1);
+      if (step == 0) {
+        if (k != num_candidates - 1) {
+          symm_swap(front_vars, F, ldf, k, num_candidates - 1);
+        }
         num_candidates -= 1;
 
         // No need to continue this iteration of the loop.
@@ -1096,30 +1086,23 @@ class SparseLDL {
       }
 
       // Apply the update
-      if (s == 1) {
+      if (step == 1) {
         // Copy the column of F[k + 1:, k] to the row F[k, k + 1:] for
         // later usage
-        int n = ldf - (k + 1);
-        int one = 1;
-        blas_copy<T>(&n, &F[(ldf + 1) * k + 1], &one, &F[k + (k + 1) * ldf],
-                     &ldf);
+        const int n = ldf - (k + 1);
+        blas_copy<T>(n, &F[(ldf + 1) * k + 1], 1, &F[k + (k + 1) * ldf], ldf);
 
         // Find the inverse of the 1x1 pivot
         T d11inv = 1.0 / F[k * (ldf + 1)];
 
         // Update the column below the diagonal
-        T* f = &F[k * (ldf + 1) + 1];
-        for (int j = k + 1; j < ldf; j++, f++) {
-          f[0] *= d11inv;
-        }
-      } else if (s == 2) {
+        blas_scal<T>(ldf - (k + 1), d11inv, &F[k * (ldf + 1) + 1], 1);
+      } else if (step == 2) {
         // Copy the columns F[k + 2:, k:k + 2] -> F[k:k + 2, k + 2:].T
-        int n = ldf - (k + 2);
-        int one = 1;
-        blas_copy<T>(&n, &F[k + 2 + ldf * k], &one, &F[k + (k + 2) * ldf],
-                     &ldf);
-        blas_copy<T>(&n, &F[k + 2 + ldf * (k + 1)], &one,
-                     &F[k + 1 + (k + 2) * ldf], &ldf);
+        const int n = ldf - (k + 2);
+        blas_copy<T>(n, &F[k + 2 + ldf * k], 1, &F[k + (k + 2) * ldf], ldf);
+        blas_copy<T>(n, &F[k + 2 + ldf * (k + 1)], 1, &F[k + 1 + (k + 2) * ldf],
+                     ldf);
 
         // Find the inverse of the 2x2 pivot
         T d11 = F[k * (ldf + 1)];
@@ -1132,47 +1115,47 @@ class SparseLDL {
         T d22inv = d11 * inv;
 
         // Update the column below the block diagonal
-        T* f = &F[k * (ldf + 1) + 2];
-        for (int j = k + 2; j < ldf; j++, f++) {
-          T f1 = f[0];
-          T f2 = f[ldf];
+        T* f1 = &F[k * (ldf + 1) + 2];
+        T* f2 = &F[k * (ldf + 1) + 2 + ldf];
+        for (int j = k + 2; j < ldf; j++, f1++, f2++) {
+          T f1val = f1[0];
+          T f2val = f2[0];
 
-          f[0] = d11inv * f1 + d21inv * f2;
-          f[ldf] = d21inv * f1 + d22inv * f2;
+          f1[0] = d11inv * f1val + d21inv * f2val;
+          f2[0] = d21inv * f1val + d22inv * f2val;
         }
       }
 
-      // Apply the update to the remaining candidate columns
-      if (s > 0) {
-        int mdim = (ldf - (k + s));             // number of rows
-        int ndim = (num_candidates - (k + s));  // number of columns
-        int kdim = s;
-        T alpha = -1.0;
-        T beta = 1.0;
-
-        blas_gemm<T>("N", "N", &mdim, &ndim, &kdim, &alpha,
-                     &F[(k + s) + k * ldf], &ldf, &F[k + (k + s) * ldf], &ldf,
-                     &beta, &F[(k + s) + (k + s) * ldf], &ldf);
+      // Apply the update to the remaining fully summed columns
+      // F[k+s:, k+s:fs] -= F[k+s:, k:k+s] @ F[k:k+s, k+s:fs]
+      if (step > 0) {
+        int mdim = (ldf - (k + step));           // number of rows
+        int ndim = (fully_summed - (k + step));  // number of columns
+        int kdim = step;
+        blas_gemm<T>("N", "N", mdim, ndim, kdim, -1.0, &F[(k + step) + k * ldf],
+                     ldf, &F[k + (k + step) * ldf], ldf, 1.0,
+                     &F[(k + step) * (ldf + 1)], ldf);
       }
 
       // Increment the
-      k += s;
+      k += step;
     }
 
     // The candidates have now been reduced to the number of pivots
     int num_pivots = num_candidates;
 
-    // Apply the trailing update (where npiv = num_pivots)
-    // F[npiv:, npiv:] -= F[npiv:, :npiv] @ F[:npiv, npiv:]
-    int ndim = front_size - num_pivots;
-    int kdim = num_pivots;
-    frontal_trailing_update(ndim, kdim, &F[num_pivots], ldf,
-                            &F[ldf * num_pivots], ldf,
-                            &F[(ldf + 1) * num_pivots], ldf);
-
     // The number of delayed pivots is the difference between the fully summed
     // candidates we started from and the pivots that were successful
     int num_delayed = fully_summed - num_pivots;
+
+    // Apply the trailing update (where fs = fully_summed) and (npiv =
+    // num_pivots)
+    // F[fs:, fs:] -= F[fs:, :npiv] @ F[:npiv, fs:]
+    int offset = fully_summed;
+    int ndim = front_size - fully_summed;
+    int kdim = num_pivots;
+    frontal_trailing_update(ndim, kdim, &F[offset], ldf, &F[ldf * offset], ldf,
+                            &F[(ldf + 1) * offset], ldf);
 
     // Push this onto the stack
     stack.push(num_pivots, num_delayed, front_size, front_vars, F);
@@ -1181,7 +1164,7 @@ class SparseLDL {
     const int* pivots = front_vars;
     const int* delayed = &front_vars[num_pivots];
     factor.add_factor(ks, num_pivots, pivots, num_delayed, delayed,
-                      front_size - fully_summed, F);
+                      contrib_size, F);
 
     return 0;
   }
@@ -1202,13 +1185,10 @@ class SparseLDL {
    */
   void frontal_trailing_update(int ndim, int kdim, const T* A, int lda,
                                const T* B, int ldb, T* C, int ldc) const {
-    T alpha = -1.0;
-    T beta = 1.0;
-
     // Apply the regular update
     if (ndim < 32) {
-      blas_gemm<T>("N", "N", &ndim, &ndim, &kdim, &alpha, A, &lda, B, &ldb,
-                   &beta, C, &ldc);
+      blas_gemm<T>("N", "N", ndim, ndim, kdim, -1.0, A, lda, B, ldb, 1.0, C,
+                   ldc);
     } else {
       //
       // [ C11  0   ] -= [ A11 ] [ B11  B12 ]
@@ -1219,8 +1199,8 @@ class SparseLDL {
       int n2 = ndim - n1;
 
       // Compute C21 = C21 - A21 * B11
-      blas_gemm<T>("N", "N", &n2, &n1, &kdim, &alpha, &A[n1], &lda, B, &ldb,
-                   &beta, &C[n1], &ldc);
+      blas_gemm<T>("N", "N", n2, n1, kdim, -1.0, &A[n1], lda, B, ldb, 1.0,
+                   &C[n1], ldc);
 
       // Compute C11 = C11 - A11 * B11
       frontal_trailing_update(n1, kdim, A, lda, B, ldb, C, ldc);
@@ -1257,7 +1237,7 @@ class SparseLDL {
 
     // Factor the matrix
     int info;
-    lapack_sytrf<T>("L", &n, F, &n, ipiv, L, &lwork, &info);
+    lapack_sytrf<T>("L", n, F, n, ipiv, work, lwork, &info);
 
     // Copy the data into the factorization storage
     std::copy(front_vars, front_vars + n, vars);
@@ -1394,7 +1374,7 @@ class SparseLDL {
       if (ipiv) {
         int nrhs = 1;
         int info;
-        lapack_sytrs("L", &ldl, &nrhs, L, &ldl, ipiv, temp, &ldl, &info);
+        lapack_sytrs("L", ldl, nrhs, L, ldl, ipiv, temp, ldl, &info);
       } else {
         // Find the solution t1 = L11^{-1} * t1, overwriting temp
         // with the solution
@@ -1403,10 +1383,8 @@ class SparseLDL {
         // Compute the matrix-vector t2 = L21 * t1 and add the contributions
         // to the lower block
         int size = num_delayed + num_contrib;
-        T alpha = 1.0, beta = 0.0;
-        int inc = 1;
-        blas_gemv<T>("N", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
-                     temp, &inc, &beta, &temp[num_pivots], &inc);
+        blas_gemv<T>("N", size, num_pivots, 1.0, &L[num_pivots], ldl, temp, 1,
+                     0.0, &temp[num_pivots], 1);
 
         // Add the contributions
         for (int j = 0, jj = num_pivots; j < num_delayed; j++, jj++) {
@@ -1467,10 +1445,8 @@ class SparseLDL {
 
         // Compute the matrix-vector product
         int size = num_delayed + num_contrib;
-        T alpha = -1.0, beta = 1.0;
-        int inc = 1;
-        blas_gemv<T>("T", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
-                     &temp[num_pivots], &inc, &beta, temp, &inc);
+        blas_gemv<T>("T", size, num_pivots, -1.0, &L[num_pivots], ldl,
+                     &temp[num_pivots], 1, 1.0, temp, 1);
 
         // Solve L11^{T} * x = temp
         solve_pivot_transpose(num_pivots, pivots, L, ldl, temp);
@@ -1583,19 +1559,16 @@ class SparseLDL {
     // Positive definite matrix factorization of L11 * L11^{T} = F11
     int ldf = front_size;
     int info;
-    lapack_potrf<T>("L", &num_pivots, F, &ldf, &info);
+    lapack_potrf<T>("L", num_pivots, F, ldf, &info);
 
     // Compute L21 = F21 * L^{-T}
-    T alpha = 1.0;
-    blas_trsm<T>("R", "L", "T", "N", &contrib_size, &num_pivots, &alpha, F,
-                 &ldf, &F[num_pivots], &ldf);
+    blas_trsm<T>("R", "L", "T", "N", contrib_size, num_pivots, 1.0, F, ldf,
+                 &F[num_pivots], ldf);
 
     // Compute the trailing update for the lower part of the matrix
     // F22 = F22 - L21 * L21^{T}
-    alpha = -1.0;
-    T beta = 1.0;
-    blas_syrk<T>("L", "N", &contrib_size, &num_pivots, &alpha, &F[num_pivots],
-                 &ldf, &beta, &F[num_pivots * (ldf + 1)], &ldf);
+    blas_syrk<T>("L", "N", contrib_size, num_pivots, -1.0, &F[num_pivots], ldf,
+                 1.0, &F[num_pivots * (ldf + 1)], ldf);
 
     // Push the update to F22 onto the stack
     stack.push(num_pivots, num_delayed, front_size, front_vars, F);
@@ -1642,9 +1615,8 @@ class SparseLDL {
 
       // Compute the solution of L11 * t1 = t1
       int nrhs = 1;
-      T alph = 1.0;
-      blas_trsm<T>("L", "L", "N", "N", &num_pivots, &nrhs, &alph, L, &ldl, temp,
-                   &num_pivots);
+      blas_trsm<T>("L", "L", "N", "N", num_pivots, nrhs, 1.0, L, ldl, temp,
+                   num_pivots);
 
       // Assign the t1 entries back into the x vector
       for (int j = 0; j < num_pivots; j++) {
@@ -1653,10 +1625,8 @@ class SparseLDL {
 
       // Compute the matrix-vector product t2 = L21 * t1
       int size = num_delayed + num_contrib;
-      T alpha = 1.0, beta = 0.0;
-      int inc = 1;
-      blas_gemv<T>("N", &size, &num_pivots, &alpha, &L[num_pivots], &ldl, temp,
-                   &inc, &beta, &temp[num_pivots], &inc);
+      blas_gemv<T>("N", size, num_pivots, 1, &L[num_pivots], ldl, temp, 1, 0.0,
+                   &temp[num_pivots], 1);
 
       // Add the contributions x -= t2
       for (int j = 0, jj = num_pivots; j < num_delayed; j++, jj++) {
@@ -1696,16 +1666,13 @@ class SparseLDL {
 
       // Compute the matrix-vector product t1 = t1 - L21 * t2
       int size = num_delayed + num_contrib;
-      T alpha = -1.0, beta = 1.0;
-      int inc = 1;
-      blas_gemv<T>("T", &size, &num_pivots, &alpha, &L[num_pivots], &ldl,
-                   &temp[num_pivots], &inc, &beta, temp, &inc);
+      blas_gemv<T>("T", size, num_pivots, -1.0, &L[num_pivots], ldl,
+                   &temp[num_pivots], 1, 1.0, temp, 1);
 
       // Compute the solution x1 = L11^{-T} * t1
       int nrhs = 1;
-      T alph = 1.0;
-      blas_trsm<T>("L", "L", "T", "N", &num_pivots, &nrhs, &alph, L, &ldl, temp,
-                   &num_pivots);
+      blas_trsm<T>("L", "L", "T", "N", num_pivots, nrhs, 1.0, L, ldl, temp,
+                   num_pivots);
 
       // Assign the t1 entries back to x
       for (int j = 0; j < num_pivots; j++) {
