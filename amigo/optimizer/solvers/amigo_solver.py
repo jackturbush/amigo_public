@@ -4,7 +4,7 @@ from amigo import MemoryLocation, SolverType, SparseLDL
 
 class AmigoSolver(LinearSolver):
     """Use the native Amigo LDL solver"""
-    
+
     supports_inertia = True
 
     def __init__(self, problem, ustab=0.01, pivot_tol=1e-14):
