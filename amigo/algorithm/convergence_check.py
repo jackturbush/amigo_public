@@ -1,10 +1,12 @@
-"""Convergence checking for the interior-point optimizer.
+"""Convergence tests for the interior-point loop.
 
-Evaluates four convergence criteria at each iteration:
-  - Primary: all KKT components below tight tolerances
-  - Divergence: iterate magnitude exceeding safety bound
-  - Acceptable: relaxed tolerances sustained for N iterations
-  - Precision floor: bit-identical residuals (numerical limit)
+Four criteria are checked each iteration.  Primary convergence
+requires every KKT component below its tolerance.  Divergence halts
+the solve when the iterate magnitude exceeds a safety bound.
+Acceptable convergence flags a weaker solution once relaxed
+tolerances hold for several iterations in a row.  Precision-floor
+detection catches bit-identical residuals, the numerical limit below
+which further progress is not possible.
 """
 
 import numpy as np

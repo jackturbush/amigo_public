@@ -1,13 +1,11 @@
-"""Quality function barrier oracle.
+"""Quality-function barrier oracle.
 
-Computes a new barrier parameter mu by either:
-  - Mehrotra predictor-corrector: sigma = (mu_aff / mu)^3 using an
-    affine probe
-  - Golden-section search over sigma in [sigma_min, sigma_max]
-    minimizing a quality function q_L(sigma)
-
-The chosen mu is written into self.barrier_param and the search
-direction (self.px, self.update) is set at that mu for the caller.
+Selects a new barrier parameter mu either with a Mehrotra
+predictor-corrector (sigma = (mu_aff / mu)**3 using an affine probe)
+or by a golden-section search of sigma in [sigma_min, sigma_max] that
+minimizes the quality function q_L(sigma).  Writes the chosen mu into
+self.barrier_param and sets self.px / self.update at that mu for the
+caller.
 """
 
 import numpy as np
@@ -82,8 +80,8 @@ class BarrierQualityFunction:
     ):
         """Evaluate the quality function q_L(sigma).
 
-        The combined step is ``px(sigma) = px_aff + sigma * (px_cen - px_aff)``,
-        i.e. the exact KKT solution at ``mu = sigma * avg_comp``.
+        The combined step is px(sigma) = px_aff + sigma * (px_cen - px_aff),
+        i.e. the exact KKT solution at mu = sigma * avg_comp.
 
         Returns a scalar quality value.
         """
@@ -129,7 +127,7 @@ class BarrierQualityFunction:
         """Compute new mu via Mehrotra PC or golden-section quality function.
 
         Returns *(sigma, new_mu)* or *None* on failure.  The search
-        direction ``self.px`` and ``self.update`` are set to the
+        direction self.px and self.update are set to the
         combined step at the returned mu.
         """
         avg_comp, xi = self.optimizer.compute_complementarity(self.vars)

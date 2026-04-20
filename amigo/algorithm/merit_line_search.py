@@ -1,9 +1,9 @@
-"""Merit-based line search using the KKT residual norm.
+"""Backtracking line search using the KKT residual as the merit function.
 
-Backtracks the Newton step from alpha=1 until Armijo sufficient decrease
-holds on the merit function phi = ||F_mu(x)||.  Optionally tries one
-second-order correction (SOC) after the first full-step rejection to
-mitigate the Maratos effect, reusing the existing factorization.
+Shortens the step from alpha=1 until Armijo sufficient decrease holds
+on phi = ||F_mu(x)||.  After the first full-step rejection the routine
+optionally tries one second-order correction to mitigate the Maratos
+effect, reusing the existing factorization.
 """
 
 

@@ -1,10 +1,10 @@
-"""Bound safeguards: keep iterates strictly interior to variable bounds.
+"""Keep iterates strictly interior to the variable bounds.
 
-Two mechanisms that both protect the iterate from bound degeneracy:
-  - Slack flooring: stored slacks sl, su are kept positive and bounded
-    away from zero as mu shrinks (prevents Sigma = Z/S ill-conditioning)
-  - Adaptive tau: the fraction-to-boundary parameter that caps the
-    Newton step, adapted from mu as tau = max(tau_min, 1 - mu)
+Two complementary safeguards.  Slack flooring prevents the stored
+slacks sl, su from collapsing to zero as mu shrinks, which would make
+Sigma = Z/S ill-conditioned.  The adaptive tau rule caps the Newton
+step by the fraction-to-boundary parameter tau = max(tau_min, 1 - mu),
+so the iterate never touches a bound.
 """
 
 import numpy as np

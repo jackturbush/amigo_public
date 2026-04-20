@@ -1,15 +1,11 @@
-"""Newton direction computation via KKT factorization and solve.
+"""Gradient evaluation, KKT factorization, and Newton solve.
 
-Core linear-algebra driver of the interior-point method:
-  - Evaluate gradient at the current iterate
-  - Assemble and factorize the KKT matrix (with inertia correction
-    delegated to an InertiaCorrector when available)
-  - Solve the condensed augmented system, ask the solver to refine,
-    and back-substitute for bound duals
-  - Combined factorize-and-solve entry point for the main loop
-
-Iterative refinement itself lives in LinearSolver.iterative_refinement
-as pure linear algebra; the Optimizer only orchestrates the call.
+Evaluates the gradient, assembles and factorizes the KKT matrix
+(delegating inertia correction to InertiaCorrector when the solver
+supports it), solves the condensed augmented system, asks the solver
+to iteratively refine the result, and back-substitutes for the bound
+duals.  The iterative-refinement kernel itself lives on the
+LinearSolver base class.
 """
 
 import numpy as np

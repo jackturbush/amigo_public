@@ -1,12 +1,11 @@
-"""Constraint and bound multiplier initialization strategies.
+"""Strategies for initializing constraint and bound multipliers.
 
-Three strategies at the start of optimization (Section 3.6):
-  - Least-squares: solve [I, A^T; A, 0] to minimize dual infeasibility norm
-  - Affine scaling: solve mu=0 KKT, update y and z from the affine step
-  - Zero: set all multipliers to zero
-
-A safeguard discards the least-squares result and sets y=0 if
-||y||_inf exceeds lambda_max.
+The least-squares initializer solves the normal-equation system
+[I, A^T; A, 0] to obtain the y that minimizes the dual infeasibility
+norm, and falls back to y = 0 if the computed multipliers exceed
+lambda_max in magnitude.  The affine-scaling initializer solves the
+KKT system at mu = 0 and updates y and z from the resulting affine
+step.  The third option sets all multipliers to zero.
 """
 
 import numpy as np

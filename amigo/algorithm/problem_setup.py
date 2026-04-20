@@ -1,13 +1,8 @@
-"""Problem setup and loop configuration helpers for the Optimizer.
+"""Setup helpers used by the Optimizer during construction and loop entry.
 
-Covers two stages:
-  - __init__ setup: vector allocation, solver selection, backend creation,
-    bound handling, slack setup, MPI distribution
-  - Loop configuration: inertia corrector construction, zero-Hessian index
-    resolution, quality-function state initialization
-
-Kept separate from the optimization logic so that the Optimizer brain
-(interior_point.py) only orchestrates, never defines helpers.
+Covers vector allocation, solver selection, backend creation, MPI
+distribution, slack-bound handling, the inertia corrector, zero-Hessian
+indices, and the quality-function globalization state.
 """
 
 import numpy as np
@@ -28,7 +23,6 @@ from .inertia_correction import InertiaCorrector
 class ProblemSetup:
     """Initialization and loop-config helpers."""
 
-    # ---- __init__ helpers ----------------------------------------------
 
     def _partition_problem(self):
         if self.distribute:
@@ -147,8 +141,6 @@ class ProblemSetup:
             self.diag = self.problem.create_vector()
             self.px = self.problem.create_vector()
             self.ir_corr = self.problem.create_vector()
-
-    # ---- Loop-config helpers -------------------------------------------
 
     def _build_inertia_corrector(self, mult_ind, tol, options, comm_rank):
         """Create an InertiaCorrector if the solver supports inertia queries."""

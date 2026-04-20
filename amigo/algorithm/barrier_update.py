@@ -1,12 +1,9 @@
-"""Per-iteration barrier parameter update orchestration.
+"""Per-iteration barrier-parameter update and direction computation.
 
-Drives one IPM iteration's barrier-update step:
-  - Quality-function strategy: free-mode oracle / monotone fallback
-  - Classical strategies: heuristic (LOQO) / monotone A-3
-  - Step rejection handling: QF free->monotone switch, barrier increase
-
-Delegates the actual mu computation to BarrierHeuristic,
-BarrierQualityFunction, and BarrierAdaptiveMu.
+Runs one step of the selected barrier strategy (classical heuristic
+or monotone update, or the adaptive quality-function oracle), calls the KKT factorization
+and direction-finding routines, and handles the rejection paths
+(QF free-to-monotone switch, barrier increase on repeated rejections).
 """
 
 

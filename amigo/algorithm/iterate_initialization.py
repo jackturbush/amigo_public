@@ -1,12 +1,9 @@
-"""Iterate initialization before the main optimization loop.
+"""Build the primal-dual starting point before the first iteration.
 
-Sets up the primal-dual starting point:
-  1. Relax bounds by a small factor
-  2. Project design variables into relaxed bounds, set z = 1.0
-  3. Initialize slacks from constraint values
-  4. Gradient-based NLP scaling
-  5. Least-squares or affine multiplier initialization
-  6. Final gradient evaluation at the starting point
+Relaxes variable bounds, projects the initial design vector into the
+relaxed box, initializes slacks and bound multipliers, applies
+gradient-based NLP scaling, and initializes constraint multipliers
+(least-squares by default, affine step when requested).
 """
 
 from ..model import ModelVector

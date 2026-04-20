@@ -1,8 +1,8 @@
-"""Post-optimization outputs and sensitivity computation.
+"""Model outputs and post-optimality sensitivities.
 
-After optimize() terminates, these methods evaluate model outputs at
-the final iterate and compute post-optimality derivatives via the
-adjoint or direct method (depending on the shape of of/wrt).
+Evaluates the model's output vector at the converged iterate and
+computes post-optimality derivatives through either the adjoint or
+direct method.
 """
 
 import numpy as np

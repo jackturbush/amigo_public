@@ -1,13 +1,10 @@
-"""Mutable per-iteration state for the IPM optimization loop.
+"""Per-iteration state carried through the optimization loop.
 
-Groups all scalar counters, tracking variables, and strategy-specific
-state that change across iterations into a single object.  Replaces
-~60 lines of scattered locals in ipm_driver.optimize() with one
-IpmState instance that can be passed to helper methods.
-
-Instance-wide configuration (max_iters, tolerances, etc.) stays in
-the options dict.  Algorithmic state that persists across calls
-(self._qf_refs, self._filter_theta_0, etc.) stays on self.
+Holds the scalar counters, step-size history, quality-function mode,
+and filter-reset/rejection counts that change every iteration.  Static
+configuration lives in the options dict; longer-lived algorithmic
+state (reference points for globalization, filter theta_0) stays on
+the Optimizer instance.
 """
 
 from dataclasses import dataclass
@@ -16,15 +13,7 @@ from typing import Optional
 
 @dataclass
 class IpmState:
-    """Per-iteration mutable state for the IPM loop.
-
-    Categorized by concern:
-      - Step tracking: results of the previous line search
-      - Convergence tracking: counters for acceptable/precision floor
-      - Quality-function mu bounds and mode
-      - Rejection tracking: consecutive failures, zero-step recovery
-      - Filter monotone fallback state (classical barrier path)
-    """
+    """Mutable per-iteration state of the interior-point loop."""
 
     # Step tracking (updated after each accepted step)
     line_iters: int = 0

@@ -1,18 +1,10 @@
-"""Main Optimizer class: pure orchestration of the IPM components.
+"""Primal-dual interior-point optimizer.
 
-This file is the "brain": it assembles all algorithmic components via
-inheritance and drives the main loop.  All helper logic lives in
-focused sibling modules - this file contains NO private helpers
-beyond the main orchestrating methods.
-
-Main loop structure (each step delegates to a named method):
-  A. Evaluate KKT residual and iteration data
-  B. Log iteration
-  C. Check convergence (primary / acceptable / diverge / precision floor)
-  D. Update barrier parameter and compute Newton direction
-  E. Filter or merit line search
-  F. Restoration phase (if filter LS fails)
-  G. Post-step update (acceptance/rejection handling)
+The Optimizer class composes the algorithmic pieces from the sibling modules
+and runs the main iteration loop.  Each iteration evaluates the KKT
+residual, checks convergence, updates the barrier parameter, computes
+a Newton direction, runs a line search, and handles step acceptance
+or feasibility restoration.
 """
 
 import time
@@ -148,13 +140,13 @@ class Optimizer(
 
         self.barrier_param = options["initial_barrier_param"]
 
-        # --- Initialization ----------------------------------------------
+        # Initialization
         self._initialize_iterate(options, comm_rank)
 
         x = self.vars.get_solution()
         xview = ModelVector(self.model, x=x) if not self.distribute else None
 
-        # --- Loop state --------------------------------------------------
+        # Loop state
         state = IpmState(qf_mu_min=options["mu_min"])
         state.res_norm_mu = self.barrier_param
 
@@ -190,7 +182,7 @@ class Optimizer(
         watchdog.trigger = options["watchdog_shortened_iter_trigger"]
         watchdog.max_trials = options["watchdog_trial_iter_max"]
 
-        # --- Main loop --------------------------------------------------
+        # Main loop
         for i in range(max_iters):
             # Step A: KKT residual
             res_norm = self.optimizer.compute_residual(

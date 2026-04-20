@@ -1,9 +1,10 @@
-"""Inertia correction for the KKT system (Algorithm IC).
+"""Inertia correction for the augmented KKT system.
 
-Implements the inertia correction strategy from Wachter & Biegler 2006,
-Table 3.  Manages primal (delta_w) and constraint (delta_c) regularization
-to ensure the factorized KKT matrix has the correct number of positive
-and negative eigenvalues, with structural degeneracy detection.
+Implements Algorithm IC from Wachter & Biegler (2006, Table 3).  Grows
+primal (delta_w) and constraint (delta_c) regularization until the
+factorized KKT matrix has the correct inertia (n_primal positive and
+n_dual negative eigenvalues), with a state machine that detects
+structural degeneracy across iterations.
 """
 
 import numpy as np

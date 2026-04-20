@@ -5,6 +5,9 @@ from scipy.sparse.linalg import splu
 
 
 class DirectScipySolver(LinearSolver):
+
+    supports_inertia = False
+
     def __init__(self, problem):
         self.problem = problem
         loc = MemoryLocation.HOST_AND_DEVICE

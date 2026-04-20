@@ -1,11 +1,10 @@
-"""Adaptive mu globalization for the quality-function barrier strategy.
+"""Globalization for the adaptive (quality-function) barrier strategy.
 
-Provides the free-mode progress checks and reference tracking used to
-decide when to fall back from the QF oracle to monotone decrease:
-  - Sufficient progress check (never-monotone, kkt-error, obj-constr-filter)
-  - Remember accepted reference points
-  - Lower mu safeguard based on infeasibility progress
-  - Primal-dual KKT quality measure (for globalization only)
+Decides when free-mode is making enough progress and when to fall back
+to monotone decrease.  Tracks accepted reference points, computes the
+primal-dual KKT quality measure used for the kkt-error rule, and
+provides the lower-bound safeguard on mu based on infeasibility
+progress.
 """
 
 import numpy as np

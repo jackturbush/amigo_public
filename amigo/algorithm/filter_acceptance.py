@@ -1,9 +1,8 @@
-"""Two-dimensional filter for the line search.
+"""Two-dimensional filter used by the filter line search.
 
-Stores (phi, theta) pairs with safety margins. Used by the filter
-line search to accept or reject trial points based on dominance:
-a trial is acceptable if no filter entry dominates it in both
-objective and constraint violation.
+Stores (phi, theta) pairs with a built-in safety margin.  A trial
+point is acceptable when no stored entry dominates it in both the
+barrier objective phi and the constraint violation theta.
 """
 
 

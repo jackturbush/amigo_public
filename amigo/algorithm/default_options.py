@@ -1,8 +1,8 @@
 """Default options for the Amigo interior-point optimizer.
 
-Centralizes all ~90 option defaults covering barrier strategy, line
-search, filter, watchdog, convergence tolerances, regularization,
-inertia correction, quality function, and NLP scaling parameters.
+Holds default values for all user-facing settings: barrier strategy,
+line search, filter, watchdog, convergence tolerances, regularization,
+inertia correction, quality function, and NLP scaling.
 """
 
 

@@ -1,12 +1,14 @@
-"""KKT optimality-error scaling factors (s_d, s_c) and scaled barrier error.
+"""Scaling factors for the KKT error and the scaled barrier error.
 
-Implements the Ipopt-style scaling used for convergence tests and
-barrier decisions (Section 3.1):
-  s_c = max(s_max, sum(|z|) / n_bounds) / s_max
-  s_d = max(s_max, (sum(|y|) + sum(|z|)) / n_all) / s_max
+Follows the Ipopt scaling rule for convergence tests and barrier
+decisions:
 
-with s_max = 100.  The scaled barrier error is the infinity-norm
-aggregate used by the adaptive mu strategy.
+    s_c = max(s_max, sum(|z|) / n_bounds) / s_max
+    s_d = max(s_max, (sum(|y|) + sum(|z|)) / n_all) / s_max
+
+with s_max = 100.  The scaled barrier error aggregates dual, primal,
+and complementarity infeasibility in the infinity norm; the adaptive
+mu strategy uses it to decide when the barrier subproblem is solved.
 """
 
 import numpy as np

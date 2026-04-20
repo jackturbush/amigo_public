@@ -1,49 +1,35 @@
 """Amigo interior-point optimizer package.
 
-Module layout (each file = one concept):
+Module map, grouped by concern:
 
-Orchestration:
-  ipm_driver.py                  Main Optimizer class (pure brain)
-
-Setup:
-  problem_setup.py               __init__ helpers + loop-config helpers
-  iterate_initialization.py      Pre-loop primal-dual iterate setup
-  ipm_state.py                   IpmState dataclass (per-iteration state)
-
-Convergence and options:
+  ipm_driver.py                  Optimizer class, main loop
+  ipm_state.py                   Per-iteration state dataclass
+  problem_setup.py               __init__ and loop-config helpers
+  iterate_initialization.py      Primal-dual starting point
   convergence_check.py           Convergence criteria
   default_options.py             Default option values
 
-Barrier parameter:
-  barrier_update.py              Per-iteration orchestration (classical + QF)
+  barrier_update.py              Per-iteration barrier orchestration
   barrier_heuristic.py           LOQO-style data-driven update
-  barrier_quality_function.py    QF oracle + golden-section search
-  barrier_adaptive_mu.py         Globalization (progress/remember/safeguard)
+  barrier_quality_function.py    Quality-function oracle
+  barrier_adaptive_mu.py         Globalization for the QF strategy
 
-Newton direction:
-  newton_direction.py            KKT assembly + factorize + back-solve
+  newton_direction.py            KKT factor, solve, direction
   inertia_correction.py          Algorithm IC (Wachter & Biegler 2006)
-  (iterative refinement lives in solvers/linear_solver.py - pure lin-alg)
+  (iterative refinement lives on LinearSolver in solvers/)
 
-Line search:
   merit_line_search.py           Backtracking Armijo with SOC
-  filter_line_search.py          Filter LS + phi_mu + theta + watchdog
-  filter_acceptance.py           2D filter data structure
+  filter_line_search.py          Filter LS + phi_mu, theta, watchdog
+  filter_acceptance.py           Two-dimensional filter
 
-Scaling and bound safeguards:
   optimality_scaling.py          KKT error scaling (s_d, s_c)
   bound_safeguards.py            Slack flooring + adaptive tau
 
-Multipliers:
   multiplier_initialization.py   Least-squares / affine / zero start
-
-Restoration and diagnostics:
   feasibility_restoration.py     Restoration phase
   iteration_logger.py            Iter-data assembly + progress table
-  newton_diagnostics.py          Debug diagnostics (check_update_step)
-  post_optimization.py           Output + post-opt derivatives
-
-Solvers:
+  newton_diagnostics.py          Debug diagnostics
+  post_optimization.py           Outputs and post-opt derivatives
   solvers/                       Linear solver implementations
 """
 
@@ -53,6 +39,7 @@ from .filter_acceptance import Filter
 from .default_options import get_default_options
 
 from .solvers import (
+    AmigoSolver,
     DirectCudaSolver,
     LNKSInexactSolver,
     MumpsSolver,

@@ -1,12 +1,9 @@
-"""Debug diagnostics for the Newton step (check_update_step only).
+"""Expensive diagnostics for the Newton step, gated by check_update_step.
 
-Provides expensive verification routines that are only invoked when
-the option check_update_step is enabled:
-  - Newton quality ratio and quadratic convergence indicator
-  - Per-component KKT errors at the trial point
-  - Top-5 multiplier step contributors
-  - Top-5 bound complementarity deviations |z*gap - mu|
-  - Linear-solve accuracy check ||K*px - rhs||
+Reports the Newton quality ratio and quadratic-convergence indicator,
+per-component KKT errors at the trial point, the top contributors to
+the multiplier step, the largest bound-complementarity deviations
+|z * gap - mu|, and the linear-solve accuracy ||K * px - rhs||.
 """
 
 import numpy as np

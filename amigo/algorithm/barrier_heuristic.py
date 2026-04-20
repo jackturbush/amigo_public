@@ -1,7 +1,7 @@
-"""LOQO-style heuristic barrier parameter update.
+"""LOQO-style data-driven barrier update.
 
-Implements a simple data-driven barrier update that reduces mu
-proportional to average complementarity scaled by a centrality factor.
+Reduces mu proportional to the average complementarity, with the
+proportionality factor determined by the centrality ratio xi.
 """
 
 

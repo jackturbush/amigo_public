@@ -1,8 +1,8 @@
-"""Per-iteration logging: iteration-data assembly and table printing.
+"""Iteration-data assembly and progress-table printing.
 
-Builds the per-iteration dict (objective, NLP error, alphas, step norm,
-filter size, etc.) and prints the IPM progress table.  Pure logging:
-no debug diagnostics here (those live in newton_diagnostics.py).
+Builds the per-iteration record (objective, NLP error, step sizes,
+step norm, filter size, etc.) and prints the IPM progress table.
+Expensive debug diagnostics live in newton_diagnostics.py.
 """
 
 import sys

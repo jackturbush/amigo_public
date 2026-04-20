@@ -1,17 +1,13 @@
-"""Filter line search with second-order correction and watchdog procedure.
+"""Filter line search, second-order correction, and watchdog.
 
-The filter line search accepts or rejects the Newton step based on a
-2D filter over (phi_mu, theta):
-  - phi_mu: barrier objective  f(x) - mu * sum(log(gap))
-  - theta:  1-norm constraint violation
-
-A trial point is accepted if it passes both the iterate test (f-type
-Armijo or h-type sufficient reduction) and the filter (not dominated
-by any stored entry).  SOC is applied after the first rejection to
-mitigate the Maratos effect.
-
-The watchdog procedure detects stalls (many shortened steps in a row)
-and temporarily relaxes acceptance to escape the filter.
+Trial points are accepted against a two-dimensional filter over the
+barrier objective phi_mu = f(x) - mu * sum(log(gap)) and the 1-norm
+constraint violation theta.  A step passes if it satisfies either an
+f-type Armijo condition or an h-type sufficient-reduction condition
+and is not dominated by any stored filter entry.  SOC is applied on
+the first rejection to counter the Maratos effect.  When many
+shortened steps accumulate, the watchdog temporarily relaxes
+acceptance to escape filter stalls.
 """
 
 import numpy as np
@@ -19,8 +15,6 @@ import numpy as np
 
 class FilterLineSearch:
     """Filter-based line search, SOC, and watchdog procedure."""
-
-    # ---- Metrics used by the filter ------------------------------------
 
     def _compute_barrier_objective(self, vars):
         """Barrier objective phi_mu = f(x) - mu * sum(ln(gaps)).
@@ -53,8 +47,6 @@ class FilterLineSearch:
         if vars is None:
             vars = self.vars
         return self.optimizer.compute_constraint_violation_1norm(vars, self.grad)
-
-    # ---- Core filter line search ---------------------------------------
 
     def _filter_line_search(
         self,
@@ -284,8 +276,6 @@ class FilterLineSearch:
         # All backtracking exhausted
         self._update_gradient(self.vars.get_solution())
         return alpha_primal / alpha_x, n_steps, False, last_rejected_by_filter
-
-    # ---- Watchdog procedure --------------------------------------------
 
     def _filter_line_search_with_watchdog(
         self, alpha_x, alpha_z, inner_filter, options, comm_rank,

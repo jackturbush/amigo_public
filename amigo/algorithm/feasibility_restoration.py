@@ -1,11 +1,12 @@
-"""Feasibility restoration phase (Section 3.3).
+"""Feasibility restoration phase.
 
-Called when the filter line search fails to find an acceptable step.
-Implements two modes:
-  - Mode 1 (large theta): Reduce constraint violation by temporarily
-    increasing the barrier and taking Newton steps targeting 10% reduction.
-  - Mode 2 (small theta): Filter is blocking optimality progress.
-    Try KKT-descent steps; if none found, reset the filter.
+Invoked when the filter line search fails to produce an acceptable
+step.  Two modes are supported.  For large theta the routine
+temporarily raises the barrier and takes Newton steps aimed at a 10%
+constraint-violation reduction.  For small theta the filter is
+assumed to be blocking optimality progress; the routine tries
+KKT-descent steps and, if none are accepted, resets the filter to
+unblock the solve.
 """
 
 
